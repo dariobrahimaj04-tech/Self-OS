@@ -1,0 +1,71 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  background: #080d13;
+  color: #f4f7fb;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  overflow-x: hidden;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  overflow-x: hidden;
+  background:
+    linear-gradient(180deg, rgba(15, 23, 32, 0.96), rgba(8, 13, 19, 1) 42%),
+    #080d13;
+  color: #f4f7fb;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+input,
+select,
+textarea {
+  color-scheme: dark;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #718093;
+}
+
+option {
+  background: #101820;
+  color: #f4f7fb;
+}
+
+.overflow-x-auto {
+  contain: inline-size;
+  max-width: 100%;
+  overscroll-behavior-inline: contain;
+  scrollbar-color: #334155 #101820;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  opacity: 0.72;
+}
+
+::selection {
+  background: rgba(56, 189, 248, 0.24);
+}
+
+.focus-ring {
+  @apply focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mineral;
+}
