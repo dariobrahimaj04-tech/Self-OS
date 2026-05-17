@@ -258,7 +258,14 @@ export function FitnessProgrammingWorkspace({
       <FitnessSettingsForm settings={settings} setSettings={setSettings} onSubmit={saveSettings} status={settingsStatus} />
 
       {generated ? (
-        <FitnessPlanner plan={generated} profile={profile} settings={settings} />
+        <FitnessPlanner
+          key={`${generated.name}-${generated.days.length}-${generated.volume.map((item) => `${item.muscle}:${item.plannedSets}`).join("|")}`}
+          plan={generated}
+          profile={profile}
+          settings={settings}
+          onSettingsChange={setSettings}
+          onProfileChange={setProfile}
+        />
       ) : (
         <EmptyState title="Create a complete fitness profile" body="The Generate Program button appears after required profile fields are complete." />
       )}
