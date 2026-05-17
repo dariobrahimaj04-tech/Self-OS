@@ -1,9 +1,8 @@
 import { PrismaClient } from "@prisma/client";
-import { generateWorkoutPlan } from "../src/lib/fitness-programming";
+import { curatedExerciseLibrary, defaultFitnessSettings, generateWorkoutPlan } from "../src/lib/fitness-programming";
 import {
   checkIns,
   demoUser,
-  exerciseDatabase,
   financeTransactions,
   fitnessProfile,
   goals,
@@ -29,6 +28,7 @@ async function clearDemoData(userId: string) {
   await prisma.workoutPlan.deleteMany({ where: { userId } });
   await prisma.muscleVolumeTarget.deleteMany({ where: { userId } });
   await prisma.fitnessProfile.deleteMany({ where: { userId } });
+  await prisma.fitnessProgrammingSettings.deleteMany({ where: { userId } });
   await prisma.meal.deleteMany({ where: { userId } });
   await prisma.foodTemplate.deleteMany({ where: { userId } });
   await prisma.dailyCheckIn.deleteMany({ where: { userId } });
@@ -72,6 +72,7 @@ async function main() {
       heightCm: fitnessProfile.heightCm,
       weightKg: fitnessProfile.weightKg,
       trainingExperience: fitnessProfile.trainingExperience,
+      monthsOrYearsTraining: fitnessProfile.monthsOrYearsTraining,
       primaryGoal: fitnessProfile.primaryGoal,
       secondaryGoal: fitnessProfile.secondaryGoal,
       daysAvailablePerWeek: fitnessProfile.daysAvailablePerWeek,
@@ -83,6 +84,16 @@ async function main() {
       stressLevel: fitnessProfile.stressLevel,
       recoveryQuality: fitnessProfile.recoveryQuality,
       preferredSplit: fitnessProfile.preferredSplit,
+      preferredExercises: fitnessProfile.preferredExercises ?? [],
+      favoriteExercises: fitnessProfile.favoriteExercises ?? [],
+      blockedExercises: fitnessProfile.blockedExercises ?? [],
+      painfulExercises: fitnessProfile.painfulExercises ?? [],
+      allowAdvancedExercises: fitnessProfile.allowAdvancedExercises ?? false,
+      allowMyoReps: fitnessProfile.allowMyoReps ?? false,
+      allowLengthenedPartials: fitnessProfile.allowLengthenedPartials ?? false,
+      allowBarbellCompounds: fitnessProfile.allowBarbellCompounds ?? true,
+      allowHighSpinalLoading: fitnessProfile.allowHighSpinalLoadingExercises ?? false,
+      progressionStyle: fitnessProfile.preferredProgressionStyle ?? "double progression",
       benchPressEstimate: fitnessProfile.strengthNumbers.benchPress,
       squatEstimate: fitnessProfile.strengthNumbers.squat,
       deadliftEstimate: fitnessProfile.strengthNumbers.deadlift,
@@ -90,7 +101,32 @@ async function main() {
     }
   });
 
-  for (const exercise of exerciseDatabase) {
+  await prisma.fitnessProgrammingSettings.create({
+    data: {
+      userId: user.id,
+      preferredSplit: defaultFitnessSettings.preferredSplit,
+      trainingDays: defaultFitnessSettings.trainingDays,
+      mesocycleLength: defaultFitnessSettings.mesocycleLength,
+      defaultRirProgression: defaultFitnessSettings.defaultRirProgression,
+      defaultMinSets: defaultFitnessSettings.defaultMinSets,
+      defaultMaxSets: defaultFitnessSettings.defaultMaxSets,
+      preferredExercises: ["Machine Chest Press", "Lat Pulldown", "Hack Squat"],
+      favoriteExercises: ["Cable Lateral Raise", "Seated Leg Curl"],
+      blockedExercises: [],
+      painfulExercises: ["Dips"],
+      allowAdvancedExercises: false,
+      allowMyoReps: false,
+      allowLengthenedPartials: false,
+      allowBarbellCompounds: true,
+      allowHighSpinalLoading: false,
+      weakMusclePriorities: fitnessProfile.weakMuscleGroups,
+      useAbVariation: true,
+      preferredProgressionStyle: defaultFitnessSettings.preferredProgressionStyle,
+      deloadTriggerSensitivity: defaultFitnessSettings.deloadTriggerSensitivity
+    }
+  });
+
+  for (const exercise of curatedExerciseLibrary) {
     await prisma.exercise.upsert({
       where: { name: exercise.name },
       update: {
@@ -99,15 +135,24 @@ async function main() {
         movementPattern: exercise.movementPattern,
         equipment: exercise.equipment,
         difficultyLevel: exercise.difficultyLevel,
+        experienceTier: exercise.experienceTier,
+        technicalDifficulty: exercise.technicalDifficulty,
         hypertrophyRating: exercise.hypertrophyRating,
         strengthRating: exercise.strengthRating,
         stabilityRating: exercise.stabilityRating,
         rangeOfMotion: exercise.rangeOfMotion,
+        rangeOfMotionRating: exercise.rangeOfMotionRating,
         fatigueCost: exercise.fatigueCost,
+        spinalLoading: exercise.spinalLoading,
+        systemicFatigue: exercise.systemicFatigue,
+        jointStress: exercise.jointStress,
         jointFriendliness: exercise.jointFriendliness,
         notes: exercise.notes,
         cautions: exercise.cautions,
-        suggestedRepRange: exercise.suggestedRepRange
+        suggestedRepRange: exercise.suggestedRepRange,
+        suggestedRestRange: exercise.suggestedRestRange,
+        advancedMethodAllowed: exercise.advancedMethodAllowed,
+        alternatives: exercise.alternatives
       },
       create: {
         name: exercise.name,
@@ -116,15 +161,24 @@ async function main() {
         movementPattern: exercise.movementPattern,
         equipment: exercise.equipment,
         difficultyLevel: exercise.difficultyLevel,
+        experienceTier: exercise.experienceTier,
+        technicalDifficulty: exercise.technicalDifficulty,
         hypertrophyRating: exercise.hypertrophyRating,
         strengthRating: exercise.strengthRating,
         stabilityRating: exercise.stabilityRating,
         rangeOfMotion: exercise.rangeOfMotion,
+        rangeOfMotionRating: exercise.rangeOfMotionRating,
         fatigueCost: exercise.fatigueCost,
+        spinalLoading: exercise.spinalLoading,
+        systemicFatigue: exercise.systemicFatigue,
+        jointStress: exercise.jointStress,
         jointFriendliness: exercise.jointFriendliness,
         notes: exercise.notes,
         cautions: exercise.cautions,
-        suggestedRepRange: exercise.suggestedRepRange
+        suggestedRepRange: exercise.suggestedRepRange,
+        suggestedRestRange: exercise.suggestedRestRange,
+        advancedMethodAllowed: exercise.advancedMethodAllowed,
+        alternatives: exercise.alternatives
       }
     });
   }

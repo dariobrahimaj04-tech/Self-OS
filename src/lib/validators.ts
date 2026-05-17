@@ -4,6 +4,9 @@ const score = z.coerce.number().int().min(1).max(10);
 const nonEmpty = z.string().trim().min(1);
 const optionalText = z.string().trim().optional().or(z.literal(""));
 const dateString = z.string().min(8);
+const stringList = z.array(z.string()).default([]);
+const split = z.enum(["full body", "upper/lower", "push/pull/legs", "hybrid", "custom"]);
+const progressionStyle = z.enum(["add reps first", "add load first", "double progression"]);
 
 export const dailyCheckInSchema = z.object({
   date: dateString,
@@ -100,6 +103,58 @@ export const workoutLogSchema = z.object({
   sessionDifficulty: score.optional(),
   performanceTrend: z.enum(["improved", "stable", "dropped"]).optional(),
   notes: optionalText
+});
+
+export const fitnessProfileSchema = z.object({
+  age: z.coerce.number().int().min(13).max(100).optional(),
+  heightCm: z.coerce.number().min(100).max(250).optional(),
+  weightKg: z.coerce.number().min(30).max(300).optional(),
+  trainingExperience: z.enum(["beginner", "intermediate", "advanced"]),
+  monthsOrYearsTraining: optionalText,
+  primaryGoal: z.enum(["hypertrophy", "strength", "recomposition", "general fitness"]),
+  secondaryGoal: optionalText,
+  daysAvailablePerWeek: z.coerce.number().int().min(2).max(6),
+  preferredWorkoutDuration: z.coerce.number().int().min(30).max(150),
+  availableEquipment: stringList,
+  weakMuscleGroups: stringList,
+  injuriesOrLimitations: optionalText,
+  sleepAverage: z.coerce.number().min(0).max(12),
+  stressLevel: score,
+  recoveryQuality: score,
+  preferredSplit: split,
+  preferredExercises: stringList,
+  favoriteExercises: stringList,
+  blockedExercises: stringList,
+  painfulExercises: stringList,
+  allowAdvancedExercises: z.coerce.boolean().default(false),
+  allowMyoReps: z.coerce.boolean().default(false),
+  allowLengthenedPartials: z.coerce.boolean().default(false),
+  allowBarbellCompounds: z.coerce.boolean().default(true),
+  allowHighSpinalLoadingExercises: z.coerce.boolean().default(false),
+  preferredProgressionStyle: progressionStyle.default("double progression"),
+  strengthNumbers: z.record(z.coerce.number()).optional()
+});
+
+export const fitnessSettingsSchema = z.object({
+  preferredSplit: split,
+  trainingDays: z.coerce.number().int().min(2).max(6),
+  mesocycleLength: z.coerce.number().int().min(3).max(8),
+  defaultRirProgression: z.array(z.coerce.number().int().min(0).max(4)).min(3).max(8),
+  defaultMinSets: z.coerce.number().int().min(1).max(4),
+  defaultMaxSets: z.coerce.number().int().min(2).max(6),
+  preferredExercises: stringList,
+  favoriteExercises: stringList,
+  blockedExercises: stringList,
+  painfulExercises: stringList,
+  allowAdvancedExercises: z.coerce.boolean().default(false),
+  allowMyoReps: z.coerce.boolean().default(false),
+  allowLengthenedPartials: z.coerce.boolean().default(false),
+  allowBarbellCompounds: z.coerce.boolean().default(true),
+  allowHighSpinalLoading: z.coerce.boolean().default(false),
+  weakMusclePriorities: stringList,
+  useAbVariation: z.coerce.boolean().default(true),
+  preferredProgressionStyle: progressionStyle.default("double progression"),
+  deloadTriggerSensitivity: z.enum(["conservative", "moderate", "aggressive"]).default("moderate")
 });
 
 export const schemas = {

@@ -1,5 +1,7 @@
+import { FitnessSettingsManager } from "@/components/fitness-settings-manager";
 import { Card, PageHeader, SectionTitle } from "@/components/ui";
 import { requireUser } from "@/lib/auth-server";
+import { getSelfOsData } from "@/lib/selfos-data";
 
 const settingsSections = [
   {
@@ -18,6 +20,7 @@ const settingsSections = [
 
 export default async function SettingsPage() {
   const user = await requireUser();
+  const data = await getSelfOsData(user.id);
 
   return (
     <>
@@ -39,6 +42,9 @@ export default async function SettingsPage() {
             </ul>
           </Card>
         ))}
+      </div>
+      <div className="mt-5">
+        <FitnessSettingsManager initialSettings={data.fitnessSettings} />
       </div>
     </>
   );

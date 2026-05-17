@@ -6,11 +6,11 @@ SelfOS is a private, full-stack personal self-improvement MVP built with Next.js
 
 - Email/password signup, login, logout, session handling, and protected routes.
 - Private user-scoped data for dashboard, check-ins, fitness, nutrition, mood, journal, habits, goals, learning, finance, analytics, and settings.
-- Evidence-based fitness planner with weekly volume, RIR, MEV/MAV/MRV zones, recovery feedback, deload logic, and exercise quality scoring.
+- RP-inspired evidence-based hypertrophy planner with curated exercise pools, user exercise preferences, recovery-aware weekly split logic, RIR progression, MEV/MAV/MRV zones, fatigue/spinal-loading controls, deload logic, and exercise quality scoring.
 - Nutrition, mood, habit, goal, learning, finance, and workout CRUD with Zod validation.
 - Dark-mode-first responsive dashboard UI with sidebar navigation, charts, tables, forms, empty states, and mobile drawer navigation.
 - Rule-based AI Coach placeholder. No AI API is called by default.
-- Safe seed strategy: global exercises are shared; demo tracker data is attached only to the demo user.
+- Safe seed strategy: global exercises are shared; demo tracker data and fitness programming settings are attached only to the demo user.
 
 ## Environment Variables
 
@@ -72,6 +72,12 @@ pnpm run build
 pnpm exec prisma migrate deploy
 pnpm db:seed
 ```
+
+## Fitness Programming
+
+The fitness system is not affiliated with Renaissance Periodization, RP Strength, or Dr. Mike Israetel. It uses RP-inspired evidence-based hypertrophy programming concepts such as weekly hard-set targets, RIR, mesocycle progression, fatigue management, exercise stimulus-to-fatigue scoring, and recovery-aware split selection.
+
+Each user can create a private fitness profile and configure Settings -> Fitness Programming. The generator reads the logged-in user's preferred exercises, favorite exercises, blocked exercises, painful exercises, available equipment, weak muscle priorities, advanced method preferences, high-spinal-loading preference, and progression style before creating a program.
 
 ## Deployment
 

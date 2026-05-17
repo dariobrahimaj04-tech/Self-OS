@@ -4,6 +4,7 @@ import { databaseConfigured, getPrisma } from "@/lib/prisma";
 import type {
   DailyCheckInView,
   FinanceTransactionView,
+  FitnessProgrammingSettings,
   FitnessProfileInput,
   GoalView,
   HabitView,
@@ -29,6 +30,7 @@ export type SelfOsData = {
   insights: InsightView[];
   performancePoints: WorkoutPerformancePoint[];
   fitnessProfile: FitnessProfileInput | null;
+  fitnessSettings: FitnessProgrammingSettings | null;
 };
 
 export const emptySelfOsData: SelfOsData = {
@@ -43,7 +45,8 @@ export const emptySelfOsData: SelfOsData = {
   workoutLogs: [],
   insights: [],
   performancePoints: [],
-  fitnessProfile: null
+  fitnessProfile: null,
+  fitnessSettings: null
 };
 
 const isoDate = (value: Date | string) => new Date(value).toISOString().slice(0, 10);
@@ -104,7 +107,8 @@ export async function getSelfOsData(userId: string): Promise<SelfOsData> {
     financeTransactions,
     workoutLogs,
     insights,
-    fitnessProfile
+    fitnessProfile,
+    fitnessSettings
   ] = await Promise.all([
     prisma.dailyCheckIn.findMany({ where: { userId }, orderBy: { date: "desc" }, take: 90 }),
     prisma.meal.findMany({ where: { userId }, orderBy: { date: "desc" }, take: 200 }),
@@ -124,7 +128,8 @@ export async function getSelfOsData(userId: string): Promise<SelfOsData> {
     prisma.financeTransaction.findMany({ where: { userId }, orderBy: { date: "desc" }, take: 200 }),
     prisma.workoutLog.findMany({ where: { userId }, orderBy: { date: "desc" }, take: 120 }),
     prisma.insight.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 20 }),
-    prisma.fitnessProfile.findUnique({ where: { userId } })
+    prisma.fitnessProfile.findUnique({ where: { userId } }),
+    prisma.fitnessProgrammingSettings.findUnique({ where: { userId } })
   ]);
 
   const mappedCheckIns: DailyCheckInView[] = checkIns.map((entry) => ({
@@ -255,6 +260,7 @@ export async function getSelfOsData(userId: string): Promise<SelfOsData> {
         trainingExperience: fitnessProfile.trainingExperience as FitnessProfileInput["trainingExperience"],
         primaryGoal: fitnessProfile.primaryGoal as FitnessProfileInput["primaryGoal"],
         secondaryGoal: fitnessProfile.secondaryGoal ?? undefined,
+        monthsOrYearsTraining: fitnessProfile.monthsOrYearsTraining ?? undefined,
         daysAvailablePerWeek: fitnessProfile.daysAvailablePerWeek,
         preferredWorkoutDuration: fitnessProfile.preferredWorkoutDuration,
         availableEquipment: fitnessProfile.availableEquipment,
@@ -264,12 +270,46 @@ export async function getSelfOsData(userId: string): Promise<SelfOsData> {
         stressLevel: fitnessProfile.stressLevel,
         recoveryQuality: fitnessProfile.recoveryQuality,
         preferredSplit: fitnessProfile.preferredSplit as FitnessProfileInput["preferredSplit"],
+        preferredExercises: fitnessProfile.preferredExercises,
+        favoriteExercises: fitnessProfile.favoriteExercises,
+        blockedExercises: fitnessProfile.blockedExercises,
+        painfulExercises: fitnessProfile.painfulExercises,
+        allowAdvancedExercises: fitnessProfile.allowAdvancedExercises,
+        allowMyoReps: fitnessProfile.allowMyoReps,
+        allowLengthenedPartials: fitnessProfile.allowLengthenedPartials,
+        allowBarbellCompounds: fitnessProfile.allowBarbellCompounds,
+        allowHighSpinalLoadingExercises: fitnessProfile.allowHighSpinalLoading,
+        preferredProgressionStyle: fitnessProfile.progressionStyle as FitnessProfileInput["preferredProgressionStyle"],
         strengthNumbers: {
           benchPress: fitnessProfile.benchPressEstimate ?? 0,
           squat: fitnessProfile.squatEstimate ?? 0,
           deadlift: fitnessProfile.deadliftEstimate ?? 0,
           overheadPress: fitnessProfile.overheadPressEstimate ?? 0
         }
+      }
+    : null;
+
+  const mappedFitnessSettings: FitnessProgrammingSettings | null = fitnessSettings
+    ? {
+        preferredSplit: fitnessSettings.preferredSplit as FitnessProgrammingSettings["preferredSplit"],
+        trainingDays: fitnessSettings.trainingDays,
+        mesocycleLength: fitnessSettings.mesocycleLength,
+        defaultRirProgression: fitnessSettings.defaultRirProgression,
+        defaultMinSets: fitnessSettings.defaultMinSets,
+        defaultMaxSets: fitnessSettings.defaultMaxSets,
+        preferredExercises: fitnessSettings.preferredExercises,
+        favoriteExercises: fitnessSettings.favoriteExercises,
+        blockedExercises: fitnessSettings.blockedExercises,
+        painfulExercises: fitnessSettings.painfulExercises,
+        allowAdvancedExercises: fitnessSettings.allowAdvancedExercises,
+        allowMyoReps: fitnessSettings.allowMyoReps,
+        allowLengthenedPartials: fitnessSettings.allowLengthenedPartials,
+        allowBarbellCompounds: fitnessSettings.allowBarbellCompounds,
+        allowHighSpinalLoading: fitnessSettings.allowHighSpinalLoading,
+        weakMusclePriorities: fitnessSettings.weakMusclePriorities,
+        useAbVariation: fitnessSettings.useAbVariation,
+        preferredProgressionStyle: fitnessSettings.preferredProgressionStyle as FitnessProgrammingSettings["preferredProgressionStyle"],
+        deloadTriggerSensitivity: fitnessSettings.deloadTriggerSensitivity as FitnessProgrammingSettings["deloadTriggerSensitivity"]
       }
     : null;
 
@@ -285,6 +325,7 @@ export async function getSelfOsData(userId: string): Promise<SelfOsData> {
     workoutLogs: mappedWorkoutLogs,
     insights: mappedInsights,
     performancePoints: buildPerformancePoints(mappedCheckIns, mappedMeals, mappedWorkoutLogs),
-    fitnessProfile: mappedFitnessProfile
+    fitnessProfile: mappedFitnessProfile,
+    fitnessSettings: mappedFitnessSettings
   };
 }

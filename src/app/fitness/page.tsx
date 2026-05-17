@@ -1,20 +1,18 @@
-import { FitnessPlanner } from "@/components/fitness-planner";
+import { FitnessProgrammingWorkspace } from "@/components/fitness-programming-workspace";
 import { CrudPanel } from "@/components/crud-panel";
 import { PageHeader, Card, SectionTitle, StatCard } from "@/components/ui";
-import { generateWorkoutPlan } from "@/lib/fitness-programming";
+import { curatedExerciseLibrary } from "@/lib/fitness-programming";
 import { requireUser } from "@/lib/auth-server";
 import { getSelfOsData } from "@/lib/selfos-data";
-import { exerciseDatabase } from "@/lib/mock-data";
 
 export default async function FitnessPage() {
   const user = await requireUser();
   const data = await getSelfOsData(user.id);
   const profile = data.fitnessProfile;
-  const plan = generateWorkoutPlan(profile ?? undefined);
-  const topExercises = exerciseDatabase
+  const topExercises = curatedExerciseLibrary
     .map((exercise) => ({
       ...exercise,
-      score: exercise.hypertrophyRating * 2 + exercise.stabilityRating + exercise.rangeOfMotion + exercise.jointFriendliness - exercise.fatigueCost
+      score: exercise.hypertrophyRating * 2 + exercise.stabilityRating + exercise.rangeOfMotionRating + exercise.jointFriendliness - exercise.fatigueCost
     }))
     .sort((a, b) => b.score - a.score)
     .slice(0, 8);
@@ -24,18 +22,18 @@ export default async function FitnessPage() {
       <PageHeader
         eyebrow="Evidence-based planner"
         title="Fitness Planner and Workout Tracker"
-        description="Hypertrophy and strength programming built around weekly volume, RIR, fatigue management, recovery feedback, and joint-friendly exercise selection."
+        description="RP-inspired evidence-based hypertrophy programming built around weekly volume, RIR, fatigue management, recovery feedback, and joint-friendly exercise selection."
       />
       <div className="mb-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Experience" value={profile?.trainingExperience ?? "Not set"} detail={profile?.primaryGoal ?? "Create a profile"} tone="green" />
-        <StatCard label="Days Available" value={profile?.daysAvailablePerWeek ?? 0} detail={profile ? `${profile.preferredWorkoutDuration} min preferred` : "Profile needed"} tone="blue" />
-        <StatCard label="Recovery" value={profile ? `${profile.recoveryQuality}/10` : "No profile"} detail={profile ? `${profile.sleepAverage}h sleep avg` : "Add recovery inputs"} tone="green" />
+        <StatCard label="Experience" value={profile?.trainingExperience ?? "Create profile"} detail={profile?.primaryGoal ?? "Required before generation"} tone="green" />
+        <StatCard label="Days Available" value={profile?.daysAvailablePerWeek ?? "-"} detail={profile ? `${profile.preferredWorkoutDuration} min preferred` : "Choose training frequency"} tone="blue" />
+        <StatCard label="Recovery" value={profile ? `${profile.recoveryQuality}/10` : "-"} detail={profile ? `${profile.sleepAverage}h sleep avg` : "Add recovery inputs"} tone="green" />
         <StatCard label="Recent Output" value={data.performancePoints[0] ? `${data.performancePoints[0].performance}/10` : "No logs"} detail="Latest performance score" tone="amber" />
       </div>
-      <FitnessPlanner plan={plan} />
+      <FitnessProgrammingWorkspace initialProfile={profile} initialSettings={data.fitnessSettings} />
       <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_1fr]">
         <Card>
-          <SectionTitle title="Exercise Database Sample" subtitle="Scored for stimulus, stability, range of motion, fatigue cost, and joint friendliness." />
+          <SectionTitle title="Curated Exercise Library Sample" subtitle="Scored for stimulus, stability, range of motion, fatigue cost, and joint friendliness." />
           <div className="overflow-x-auto">
             <table className="w-full min-w-[680px] text-left text-sm sm:min-w-[760px]">
               <thead className="text-xs uppercase tracking-[0.11em] text-muted">

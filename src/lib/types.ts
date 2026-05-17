@@ -1,11 +1,16 @@
 export type ExperienceLevel = "beginner" | "intermediate" | "advanced";
 export type FitnessGoal = "hypertrophy" | "strength" | "recomposition" | "general fitness";
+export type PreferredSplit = "full body" | "upper/lower" | "push/pull/legs" | "hybrid" | "custom";
+export type ProgressionStyle = "add reps first" | "add load first" | "double progression";
+export type FatigueLevel = "low" | "moderate" | "high";
+export type SpinalLoading = "none" | "low" | "moderate" | "high";
 
 export type FitnessProfileInput = {
   age: number;
   heightCm: number;
   weightKg: number;
   trainingExperience: ExperienceLevel;
+  monthsOrYearsTraining?: string;
   primaryGoal: FitnessGoal;
   secondaryGoal?: string;
   daysAvailablePerWeek: number;
@@ -16,8 +21,40 @@ export type FitnessProfileInput = {
   sleepAverage: number;
   stressLevel: number;
   recoveryQuality: number;
-  preferredSplit: "full body" | "upper/lower" | "push/pull/legs" | "body part split" | "custom";
+  preferredSplit: PreferredSplit;
   strengthNumbers: Record<string, number>;
+  preferredExercises?: string[];
+  favoriteExercises?: string[];
+  blockedExercises?: string[];
+  painfulExercises?: string[];
+  allowAdvancedExercises?: boolean;
+  allowMyoReps?: boolean;
+  allowLengthenedPartials?: boolean;
+  allowBarbellCompounds?: boolean;
+  allowHighSpinalLoadingExercises?: boolean;
+  preferredProgressionStyle?: ProgressionStyle;
+};
+
+export type FitnessProgrammingSettings = {
+  preferredSplit: PreferredSplit;
+  trainingDays: number;
+  mesocycleLength: number;
+  defaultRirProgression: number[];
+  defaultMinSets: number;
+  defaultMaxSets: number;
+  preferredExercises: string[];
+  favoriteExercises: string[];
+  blockedExercises: string[];
+  painfulExercises: string[];
+  allowAdvancedExercises: boolean;
+  allowMyoReps: boolean;
+  allowLengthenedPartials: boolean;
+  allowBarbellCompounds: boolean;
+  allowHighSpinalLoading: boolean;
+  weakMusclePriorities: string[];
+  useAbVariation: boolean;
+  preferredProgressionStyle: ProgressionStyle;
+  deloadTriggerSensitivity: "conservative" | "moderate" | "aggressive";
 };
 
 export type ExerciseRecord = {
@@ -27,31 +64,50 @@ export type ExerciseRecord = {
   movementPattern: string;
   equipment: string[];
   difficultyLevel: ExperienceLevel | "all";
+  experienceTier?: ExperienceLevel | "all";
+  technicalDifficulty?: number;
   hypertrophyRating: number;
   strengthRating: number;
   stabilityRating: number;
   rangeOfMotion: number;
+  rangeOfMotionRating?: number;
   fatigueCost: number;
   jointFriendliness: number;
+  spinalLoading?: SpinalLoading;
+  systemicFatigue?: FatigueLevel;
+  jointStress?: FatigueLevel;
   notes: string;
   cautions?: string;
   suggestedRepRange: string;
+  suggestedRestRange?: string;
+  advancedMethodAllowed?: boolean;
+  alternatives?: string[];
 };
 
 export type PlanExercise = {
   exerciseName: string;
   primaryMuscle: string;
+  secondaryMuscles?: string[];
+  movementPattern?: string;
   sets: number;
   repRange: string;
   targetRir: number;
   restSeconds: number;
   rationale: string;
+  advancedMethod?: string;
+  fatigueCost?: number;
+  spinalLoading?: SpinalLoading;
+  exerciseTier?: ExperienceLevel | "all";
+  substitutionNote?: string;
 };
 
 export type PlanDay = {
   dayIndex: number;
   name: string;
   focusMuscles: string[];
+  recoveryRole?: string;
+  fatigueLevel?: FatigueLevel;
+  spinalLoading?: SpinalLoading;
   exercises: PlanExercise[];
 };
 
@@ -67,10 +123,16 @@ export type MuscleVolume = {
 export type GeneratedWorkoutPlan = {
   name: string;
   split: string;
+  templateName?: string;
   mesocycleWeek: number;
   days: PlanDay[];
   volume: MuscleVolume[];
   notes: string[];
+  weeklyLayout?: Array<{ day: string; name: string; training: boolean; focusMuscles: string[]; note?: string }>;
+  rirProgression?: Array<{ week: number; targetRir: string; note: string }>;
+  explanation?: string[];
+  warnings?: string[];
+  unusedPreferredExercises?: Array<{ exercise: string; reason: string; alternatives: string[] }>;
 };
 
 export type DailyCheckInView = {

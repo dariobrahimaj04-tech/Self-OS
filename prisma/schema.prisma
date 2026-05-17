@@ -8,16 +8,17 @@ datasource db {
 }
 
 model User {
-  id                  String               @id @default(cuid())
-  email               String               @unique
+  id                  String                      @id @default(cuid())
+  email               String                      @unique
   name                String
-  emailVerified       Boolean              @default(false)
+  emailVerified       Boolean                     @default(false)
   image               String?
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
+  createdAt           DateTime                    @default(now())
+  updatedAt           DateTime                    @updatedAt
   sessions            Session[]
   accounts            Account[]
   fitnessProfile      FitnessProfile?
+  fitnessSettings     FitnessProgrammingSettings?
   muscleVolumeTargets MuscleVolumeTarget[]
   workoutPlans        WorkoutPlan[]
   workoutLogs         WorkoutLog[]
@@ -85,6 +86,7 @@ model FitnessProfile {
   heightCm                 Float
   weightKg                 Float
   trainingExperience       String
+  monthsOrYearsTraining    String?
   primaryGoal              String
   secondaryGoal            String?
   daysAvailablePerWeek     Int
@@ -96,6 +98,16 @@ model FitnessProfile {
   stressLevel              Int
   recoveryQuality          Int
   preferredSplit           String
+  preferredExercises       String[] @default([])
+  favoriteExercises        String[] @default([])
+  blockedExercises         String[] @default([])
+  painfulExercises         String[] @default([])
+  allowAdvancedExercises   Boolean  @default(false)
+  allowMyoReps             Boolean  @default(false)
+  allowLengthenedPartials  Boolean  @default(false)
+  allowBarbellCompounds    Boolean  @default(true)
+  allowHighSpinalLoading   Boolean  @default(false)
+  progressionStyle         String   @default("double progression")
   benchPressEstimate       Float?
   squatEstimate            Float?
   deadliftEstimate         Float?
@@ -104,26 +116,62 @@ model FitnessProfile {
   updatedAt                DateTime @updatedAt
 }
 
+model FitnessProgrammingSettings {
+  id                        String   @id @default(cuid())
+  userId                    String   @unique
+  user                      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  preferredSplit            String   @default("upper/lower")
+  trainingDays              Int      @default(4)
+  mesocycleLength           Int      @default(4)
+  defaultRirProgression     Int[]    @default([3, 2, 2, 1])
+  defaultMinSets            Int      @default(2)
+  defaultMaxSets            Int      @default(4)
+  preferredExercises        String[] @default([])
+  favoriteExercises         String[] @default([])
+  blockedExercises          String[] @default([])
+  painfulExercises          String[] @default([])
+  allowAdvancedExercises    Boolean  @default(false)
+  allowMyoReps              Boolean  @default(false)
+  allowLengthenedPartials   Boolean  @default(false)
+  allowBarbellCompounds     Boolean  @default(true)
+  allowHighSpinalLoading    Boolean  @default(false)
+  weakMusclePriorities      String[] @default([])
+  useAbVariation            Boolean  @default(true)
+  preferredProgressionStyle String   @default("double progression")
+  deloadTriggerSensitivity  String   @default("moderate")
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+}
+
 model Exercise {
-  id                String            @id @default(cuid())
-  name              String            @unique
-  primaryMuscle     String
-  secondaryMuscles  String[]
-  movementPattern   String
-  equipment         String[]
-  difficultyLevel   String
-  hypertrophyRating Int
-  strengthRating    Int
-  stabilityRating   Int
-  rangeOfMotion     Int
-  fatigueCost       Int
-  jointFriendliness Int
-  notes             String
-  cautions          String?
-  suggestedRepRange String
-  createdAt         DateTime          @default(now())
-  workoutExercises  WorkoutExercise[]
-  workoutSets       WorkoutSet[]
+  id                    String            @id @default(cuid())
+  name                  String            @unique
+  primaryMuscle         String
+  secondaryMuscles      String[]
+  movementPattern       String
+  equipment             String[]
+  difficultyLevel       String
+  experienceTier        String            @default("all")
+  technicalDifficulty   Int               @default(2)
+  hypertrophyRating     Int
+  strengthRating        Int
+  stabilityRating       Int
+  rangeOfMotion         Int
+  rangeOfMotionRating   Int               @default(4)
+  fatigueCost           Int
+  spinalLoading         String            @default("low")
+  systemicFatigue       String            @default("low")
+  jointStress           String            @default("low")
+  jointFriendliness     Int
+  notes                 String
+  cautions              String?
+  suggestedRepRange     String
+  suggestedRestRange    String            @default("60-90s")
+  advancedMethodAllowed Boolean           @default(false)
+  alternatives          String[]          @default([])
+  createdAt             DateTime          @default(now())
+  workoutExercises      WorkoutExercise[]
+  workoutSets           WorkoutSet[]
 }
 
 model MuscleVolumeTarget {
