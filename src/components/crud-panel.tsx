@@ -32,6 +32,8 @@ export function CrudPanel({
   fields,
   columns,
   initialRows,
+  rows: controlledRows,
+  onRowsChange,
   compact = false
 }: {
   title: string;
@@ -40,11 +42,15 @@ export function CrudPanel({
   fields: FieldDef[];
   columns: ColumnDef[];
   initialRows: Row[];
+  rows?: Row[];
+  onRowsChange?: (rows: Row[]) => void;
   compact?: boolean;
 }) {
-  const [rows, setRows] = useState(initialRows);
+  const [internalRows, setInternalRows] = useState(initialRows);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const rows = controlledRows ?? internalRows;
+  const updateRows = onRowsChange ?? setInternalRows;
   const emptyForm = useMemo(
     () =>
       Object.fromEntries(
@@ -104,7 +110,7 @@ export function CrudPanel({
       const json = (await response.json()) as { data: Row; error?: string };
       if (!response.ok) throw new Error(json.error ?? "Request failed");
       const nextRow = { ...(editing ?? {}), ...json.data };
-      setRows((current) => (editingId ? current.map((row) => (String(row.id) === editingId ? nextRow : row)) : [nextRow, ...current]));
+      updateRows(editingId ? rows.map((row) => (String(row.id) === editingId ? nextRow : row)) : [nextRow, ...rows]);
       cancelEdit();
     } catch (error) {
       console.error(error);
@@ -117,7 +123,7 @@ export function CrudPanel({
     setLoading(true);
     try {
       await fetch(`/api/${resource}/${id}`, { method: "DELETE" });
-      setRows((current) => current.filter((row) => String(row.id) !== id));
+      updateRows(rows.filter((row) => String(row.id) !== id));
       if (editingId === id) cancelEdit();
     } finally {
       setLoading(false);
