@@ -18,6 +18,17 @@ export async function POST(request: Request) {
   const exerciseNames = plan.days.flatMap((day) => day.exercises.map((exercise) => exercise.exerciseName));
   const exercises = await prisma.exercise.findMany({ where: { name: { in: exerciseNames } } });
   const exerciseByName = new Map(exercises.map((exercise) => [exercise.name, exercise.id]));
+  const fullPlanMetadata = {
+    schemaVersion: 1,
+    volume: plan.volume,
+    generatedPlan: plan,
+    customExerciseStorage: "Custom exercises are stored in this WorkoutPlan.volumeTargets JSON metadata because WorkoutExercise requires a curated Exercise row."
+  };
+
+  await prisma.workoutPlan.updateMany({
+    where: { userId: user.id, isActive: true },
+    data: { isActive: false }
+  });
 
   const savedPlan = await prisma.workoutPlan.create({
     data: {
@@ -28,7 +39,7 @@ export async function POST(request: Request) {
       mesocycleWeek: plan.mesocycleWeek,
       startDate: new Date(),
       notes: [...(plan.explanation ?? []), ...(plan.warnings ?? []), ...(plan.notes ?? [])].join("\n"),
-      volumeTargets: plan.volume as unknown as Prisma.InputJsonValue,
+      volumeTargets: fullPlanMetadata as unknown as Prisma.InputJsonValue,
       days: {
         create: plan.days.map((day) => ({
           dayIndex: day.dayIndex,
@@ -39,6 +50,7 @@ export async function POST(request: Request) {
           exercises: {
             create: day.exercises
               .map((exercise, index) => {
+                if (exercise.isCustom) return null;
                 const exerciseId = exerciseByName.get(exercise.exerciseName);
                 if (!exerciseId) return null;
                 const [minReps, maxReps] = exercise.repRange

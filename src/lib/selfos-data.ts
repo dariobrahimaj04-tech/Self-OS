@@ -6,6 +6,7 @@ import type {
   FinanceTransactionView,
   FitnessProgrammingSettings,
   FitnessProfileInput,
+  GeneratedWorkoutPlan,
   GoalView,
   HabitView,
   InsightView,
@@ -16,6 +17,7 @@ import type {
   WorkoutLogView,
   WorkoutPerformancePoint
 } from "@/lib/types";
+import { parseExecutionNotes } from "@/lib/fitness-plan-utils";
 
 export type SelfOsData = {
   checkIns: DailyCheckInView[];
@@ -31,6 +33,7 @@ export type SelfOsData = {
   performancePoints: WorkoutPerformancePoint[];
   fitnessProfile: FitnessProfileInput | null;
   fitnessSettings: FitnessProgrammingSettings | null;
+  activeWorkoutPlan: GeneratedWorkoutPlan | null;
 };
 
 export const emptySelfOsData: SelfOsData = {
@@ -46,7 +49,8 @@ export const emptySelfOsData: SelfOsData = {
   insights: [],
   performancePoints: [],
   fitnessProfile: null,
-  fitnessSettings: null
+  fitnessSettings: null,
+  activeWorkoutPlan: null
 };
 
 const isoDate = (value: Date | string) => new Date(value).toISOString().slice(0, 10);
@@ -92,6 +96,88 @@ function buildPerformancePoints(
   });
 }
 
+function readGeneratedPlanFromWorkoutPlan(plan: {
+  name: string;
+  split: string;
+  mesocycleWeek: number;
+  notes: string | null;
+  volumeTargets: unknown;
+  days: Array<{
+    dayIndex: number;
+    name: string;
+    focusMuscles: string[];
+    targetRir: number;
+    notes: string | null;
+    exercises: Array<{
+      order: number;
+      sets: number;
+      minReps: number;
+      maxReps: number;
+      targetRir: number;
+      restSeconds: number;
+      notes: string | null;
+      exercise: {
+        name: string;
+        primaryMuscle: string;
+        secondaryMuscles: string[];
+        movementPattern: string;
+        fatigueCost: number;
+        spinalLoading: string;
+        experienceTier: string;
+      };
+    }>;
+  }>;
+}): GeneratedWorkoutPlan {
+  const metadata = plan.volumeTargets as { generatedPlan?: GeneratedWorkoutPlan; volume?: GeneratedWorkoutPlan["volume"] } | null;
+  if (metadata && !Array.isArray(metadata) && metadata.generatedPlan?.days?.length) {
+    return {
+      ...metadata.generatedPlan,
+      name: metadata.generatedPlan.name ?? plan.name,
+      split: metadata.generatedPlan.split ?? plan.split,
+      mesocycleWeek: metadata.generatedPlan.mesocycleWeek ?? plan.mesocycleWeek
+    };
+  }
+
+  const days = [...plan.days]
+    .sort((a, b) => a.dayIndex - b.dayIndex)
+    .map((day) => ({
+      dayIndex: day.dayIndex,
+      name: day.name,
+      focusMuscles: day.focusMuscles,
+      recoveryRole: day.notes ?? undefined,
+      fatigueLevel: "moderate" as const,
+      spinalLoading: day.exercises.some((item) => item.exercise.spinalLoading === "high") ? "high" as const : "low" as const,
+      exercises: [...day.exercises]
+        .sort((a, b) => a.order - b.order)
+        .map((item) => ({
+          exerciseName: item.exercise.name,
+          primaryMuscle: item.exercise.primaryMuscle,
+          secondaryMuscles: item.exercise.secondaryMuscles,
+          movementPattern: item.exercise.movementPattern,
+          sets: item.sets,
+          repRange: `${item.minReps}-${item.maxReps}`,
+          targetRir: item.targetRir,
+          restSeconds: item.restSeconds,
+          rationale: item.notes ?? "Saved curated exercise.",
+          fatigueCost: item.exercise.fatigueCost,
+          spinalLoading: item.exercise.spinalLoading as GeneratedWorkoutPlan["days"][number]["exercises"][number]["spinalLoading"],
+          exerciseTier: item.exercise.experienceTier as GeneratedWorkoutPlan["days"][number]["exercises"][number]["exerciseTier"],
+          source: "curated" as const
+        }))
+    }));
+
+  return {
+    name: plan.name,
+    split: plan.split,
+    mesocycleWeek: plan.mesocycleWeek,
+    days,
+    volume: Array.isArray(plan.volumeTargets) ? plan.volumeTargets as GeneratedWorkoutPlan["volume"] : metadata?.volume ?? [],
+    notes: plan.notes ? plan.notes.split("\n").filter(Boolean) : [],
+    weeklyLayout: days.map((day, index) => ({ day: String(index + 1), name: day.name, training: true, focusMuscles: day.focusMuscles })),
+    warnings: []
+  };
+}
+
 export async function getSelfOsData(userId: string): Promise<SelfOsData> {
   if (!databaseConfigured()) return emptySelfOsData;
 
@@ -108,7 +194,8 @@ export async function getSelfOsData(userId: string): Promise<SelfOsData> {
     workoutLogs,
     insights,
     fitnessProfile,
-    fitnessSettings
+    fitnessSettings,
+    activeWorkoutPlan
   ] = await Promise.all([
     prisma.dailyCheckIn.findMany({ where: { userId }, orderBy: { date: "desc" }, take: 90 }),
     prisma.meal.findMany({ where: { userId }, orderBy: { date: "desc" }, take: 200 }),
@@ -126,10 +213,25 @@ export async function getSelfOsData(userId: string): Promise<SelfOsData> {
     }),
     prisma.learningItem.findMany({ where: { userId }, orderBy: { updatedAt: "desc" }, take: 100 }),
     prisma.financeTransaction.findMany({ where: { userId }, orderBy: { date: "desc" }, take: 200 }),
-    prisma.workoutLog.findMany({ where: { userId }, orderBy: { date: "desc" }, take: 120 }),
+    prisma.workoutLog.findMany({ where: { userId }, orderBy: { date: "desc" }, take: 120, include: { feedback: true } }),
     prisma.insight.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 20 }),
     prisma.fitnessProfile.findUnique({ where: { userId } }),
-    prisma.fitnessProgrammingSettings.findUnique({ where: { userId } })
+    prisma.fitnessProgrammingSettings.findUnique({ where: { userId } }),
+    prisma.workoutPlan.findFirst({
+      where: { userId, isActive: true },
+      orderBy: { updatedAt: "desc" },
+      include: {
+        days: {
+          orderBy: { dayIndex: "asc" },
+          include: {
+            exercises: {
+              orderBy: { order: "asc" },
+              include: { exercise: true }
+            }
+          }
+        }
+      }
+    })
   ]);
 
   const mappedCheckIns: DailyCheckInView[] = checkIns.map((entry) => ({
@@ -234,15 +336,52 @@ export async function getSelfOsData(userId: string): Promise<SelfOsData> {
     notes: transaction.notes ?? undefined
   }));
 
-  const mappedWorkoutLogs: WorkoutLogView[] = workoutLogs.map((log) => ({
-    id: log.id,
-    date: isoDate(log.date),
-    title: log.title,
-    durationMinutes: log.durationMinutes ?? 0,
-    sessionDifficulty: log.sessionDifficulty ?? 5,
-    performanceTrend: (log.performanceTrend ?? "stable") as WorkoutLogView["performanceTrend"],
-    notes: log.notes ?? undefined
-  }));
+  const mappedWorkoutLogs: WorkoutLogView[] = workoutLogs.map((log) => {
+    const execution = parseExecutionNotes(log.notes);
+    return {
+      id: log.id,
+      date: isoDate(log.date),
+      title: log.title,
+      durationMinutes: log.durationMinutes ?? 0,
+      sessionDifficulty: log.sessionDifficulty ?? 5,
+      performanceTrend: (log.performanceTrend ?? "stable") as WorkoutLogView["performanceTrend"],
+      notes: log.notes?.startsWith("SELFOS_EXECUTION:") ? execution?.notes : log.notes ?? undefined,
+      workoutPlanId: log.workoutPlanId ?? undefined,
+      execution: execution
+        ? {
+            dayName: execution.dayName,
+            completedSets: execution.completedSets,
+            skippedSets: execution.skippedSets,
+            totalVolumeLoad: execution.totalVolumeLoad,
+            musclesTrained: execution.musclesTrained,
+            exerciseSummaries: execution.exerciseSummaries
+          }
+        : undefined,
+      feedback: execution?.feedback
+        ? {
+            pumpScore: execution.feedback.pumpQuality,
+            targetMuscleFeel: execution.feedback.targetMuscleFeel,
+            jointPain: execution.feedback.jointPain,
+            sorenessExpected: execution.feedback.sorenessExpected,
+            sessionDifficulty: execution.feedback.sessionDifficulty,
+            performance: execution.feedback.performance,
+            recovery: execution.feedback.recovery,
+            notes: execution.feedback.notes
+          }
+        : log.feedback
+          ? {
+              pumpScore: log.feedback.pumpScore,
+              targetMuscleFeel: log.feedback.targetLimited ? 4 : 2,
+              jointPain: log.feedback.jointPain ? "moderate" : "none",
+              sorenessExpected: log.feedback.soreness >= 7 ? "high" : log.feedback.soreness >= 4 ? "moderate" : "low",
+              sessionDifficulty: log.feedback.sessionDifficulty,
+              performance: log.feedback.performanceTrend === "improved" ? "better" : log.feedback.performanceTrend === "dropped" ? "worse" : "same",
+              recovery: log.feedback.recoveryQuality >= 7 ? "good" : log.feedback.recoveryQuality >= 5 ? "okay" : "poor",
+              notes: log.feedback.notes ?? undefined
+            }
+          : undefined
+    };
+  });
 
   const mappedInsights: InsightView[] = insights.map((insight) => ({
     id: insight.id,
@@ -326,6 +465,7 @@ export async function getSelfOsData(userId: string): Promise<SelfOsData> {
     insights: mappedInsights,
     performancePoints: buildPerformancePoints(mappedCheckIns, mappedMeals, mappedWorkoutLogs),
     fitnessProfile: mappedFitnessProfile,
-    fitnessSettings: mappedFitnessSettings
+    fitnessSettings: mappedFitnessSettings,
+    activeWorkoutPlan: activeWorkoutPlan ? readGeneratedPlanFromWorkoutPlan(activeWorkoutPlan) : null
   };
 }

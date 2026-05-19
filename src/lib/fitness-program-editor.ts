@@ -1,9 +1,18 @@
 import { curatedExerciseLibrary, defaultFitnessSettings, generateWorkoutPlan } from "@/lib/fitness-programming";
+import {
+  analyzeRecoveryWarnings,
+  createPlanExercise,
+  inferTargetMuscle,
+  rebuildWeeklyLayout,
+  refreshPlanAfterEdit,
+  restorePlanVersion
+} from "@/lib/fitness-plan-utils";
 import type {
   FitnessProgrammingSettings,
   FitnessProfileInput,
   GeneratedWorkoutPlan,
   MuscleVolume,
+  PlanDay,
   PlanExercise,
   PreferredSplit
 } from "@/lib/types";
@@ -37,7 +46,8 @@ const muscles = [
   "Glutes",
   "Calves",
   "Abs",
-  "Forearms"
+  "Forearms",
+  "Other"
 ];
 
 const muscleAliases: Record<string, string> = {
@@ -61,7 +71,8 @@ const muscleAliases: Record<string, string> = {
   calf: "Calves",
   abs: "Abs",
   core: "Abs",
-  forearms: "Forearms"
+  forearms: "Forearms",
+  other: "Other"
 };
 
 const exerciseAliases: Record<string, string> = {
@@ -100,6 +111,15 @@ function clonePlan(plan: GeneratedWorkoutPlan): GeneratedWorkoutPlan {
 
 function uniqueList(values: string[]) {
   return Array.from(new Set(values.filter(Boolean)));
+}
+
+function cleanExerciseRequestName(value: string) {
+  return value
+    .replace(/^this custom exercise:?\s*/i, "")
+    .replace(/^custom exercise:?\s*/i, "")
+    .replace(/\s+as a custom exercise\b/gi, "")
+    .replace(/\s+even if it is not in the library\b/gi, "")
+    .trim();
 }
 
 function withDefaultSettings(settings?: FitnessProgrammingSettings | null): FitnessProgrammingSettings {
@@ -232,6 +252,76 @@ function recomputeVolume(plan: GeneratedWorkoutPlan) {
   plan.volume = plan.volume.map((item) => ({ ...item, plannedSets: totals.get(item.muscle) ?? 0 }));
 }
 
+function findDay(plan: GeneratedWorkoutPlan, value?: string | null) {
+  if (!value) return null;
+  const normalized = normalize(value);
+  const exact = plan.days.find((day) => normalize(day.name) === normalized);
+  if (exact) return exact;
+  return (
+    plan.days.find((day) => normalized.includes(normalize(day.name)) || normalize(day.name).includes(normalized)) ??
+    plan.days.find((day) => day.name.split(/\s+/).every((part) => normalized.includes(normalize(part)))) ??
+    null
+  );
+}
+
+function findBestDayForExercise(plan: GeneratedWorkoutPlan, exercise: PlanExercise, requestedDay?: string | null) {
+  const explicit = findDay(plan, requestedDay);
+  if (explicit) return explicit;
+  return (
+    plan.days.find((day) => day.focusMuscles.includes(exercise.primaryMuscle)) ??
+    plan.days.find((day) => /custom|weak|upper/i.test(day.name)) ??
+    plan.days[0] ??
+    null
+  );
+}
+
+function findPlanExercise(plan: GeneratedWorkoutPlan, value: string) {
+  const normalized = normalize(value);
+  const all = plan.days.flatMap((day) => day.exercises.map((exercise) => ({ day, exercise })));
+  return (
+    all.find(({ exercise }) => normalize(exercise.exerciseName) === normalized) ??
+    all.find(({ exercise }) => normalized.includes(normalize(exercise.exerciseName)) || normalize(exercise.exerciseName).includes(normalized)) ??
+    null
+  );
+}
+
+function addExerciseToPlan(
+  plan: GeneratedWorkoutPlan,
+  exerciseName: string,
+  dayName: string | null,
+  profile: FitnessProfileInput,
+  settings: FitnessProgrammingSettings,
+  result: ProgramEditResult
+) {
+  const cleanName = cleanExerciseRequestName(exerciseName);
+  if (!cleanName) return;
+  if (isBlockedOrPainful(cleanName, profile, settings, result.settingsPatch ?? {})) {
+    result.refused.push(`Did not add ${cleanName} because it is blocked or marked painful. Do not push through pain.`);
+    return;
+  }
+
+  const exercise = createPlanExercise(cleanName, undefined, profile, settings);
+  const targetDay = findBestDayForExercise(plan, exercise, dayName);
+  if (!targetDay) {
+    result.refused.push(`Could not add ${cleanName}; no workout day is available in the draft plan.`);
+    return;
+  }
+  if (targetDay.exercises.some((item) => normalize(item.exerciseName) === normalize(exercise.exerciseName))) {
+    return;
+  }
+
+  targetDay.exercises = [...targetDay.exercises, exercise];
+  targetDay.focusMuscles = uniqueList([...targetDay.focusMuscles, exercise.primaryMuscle]);
+  if (exercise.isCustom) {
+    const inferred = inferTargetMuscle(cleanName);
+    result.changed.push(`Added custom exercise ${exercise.exerciseName} to ${targetDay.name}.`);
+    if (!inferred.inferred) result.warnings.push(`${exercise.exerciseName} target muscle could not be inferred, so it was set to Other.`);
+  } else {
+    result.changed.push(`Added curated exercise ${exercise.exerciseName} to ${targetDay.name}.`);
+  }
+  recomputeVolume(plan);
+}
+
 function replaceExercise(
   plan: GeneratedWorkoutPlan,
   fromName: string,
@@ -241,18 +331,30 @@ function replaceExercise(
   settingsPatch: Partial<FitnessProgrammingSettings>,
   result: ProgramEditResult
 ) {
-  const from = findExercise(fromName);
-  const to = findExercise(toName);
-  if (!from) {
-    result.refused.push(`Could not find "${fromName}" in the curated exercise library.`);
+  const current = findPlanExercise(plan, fromName);
+  const cleanToName = cleanExerciseRequestName(toName);
+  const to = findExercise(cleanToName);
+  const customReplacement = !to
+    ? createPlanExercise(cleanToName, current?.day, profile, settings, current?.exercise
+      ? {
+          sets: current.exercise.sets,
+          repRange: current.exercise.repRange,
+          targetRir: current.exercise.targetRir,
+          restSeconds: current.exercise.restSeconds,
+          notes: current.exercise.notes
+        }
+      : undefined)
+    : null;
+  if (!current) {
+    result.refused.push(`Could not find "${fromName}" in the current draft plan.`);
     return;
   }
-  if (!to) {
-    result.refused.push(`Custom exercise support coming later: "${toName}" is not in the curated exercise library.`);
-    return;
-  }
-  if (!canUseExercise(to, profile, settings, settingsPatch)) {
+  if (to && !canUseExercise(to, profile, settings, settingsPatch)) {
     result.refused.push(`Did not use ${to.name} because it is blocked, painful, too advanced, unavailable, or violates spinal-loading settings.`);
+    return;
+  }
+  if (!to && isBlockedOrPainful(cleanToName, profile, settings, settingsPatch)) {
+    result.refused.push(`Did not use ${cleanToName} because it is blocked or marked painful. Do not push through pain.`);
     return;
   }
 
@@ -260,32 +362,42 @@ function replaceExercise(
   plan.days = plan.days.map((day) => ({
     ...day,
     exercises: day.exercises.map((exercise) => {
-      if (normalize(exercise.exerciseName) !== normalize(from.name)) return exercise;
+      if (normalize(exercise.exerciseName) !== normalize(current.exercise.exerciseName)) return exercise;
       count += 1;
-      return exerciseToPlanExercise(exercise, to, `Edited from ${from.name} by Program Change Request.`);
+      return to
+        ? exerciseToPlanExercise(exercise, to, `Edited from ${current.exercise.exerciseName} by Program Change Request.`)
+        : {
+            ...(customReplacement as PlanExercise),
+            sets: exercise.sets,
+            repRange: exercise.repRange,
+            targetRir: exercise.targetRir,
+            restSeconds: exercise.restSeconds,
+            notes: exercise.notes
+          };
     })
   }));
 
   if (count === 0) {
-    result.refused.push(`${from.name} is not currently in the draft plan, so it was not replaced.`);
+    result.refused.push(`${current.exercise.exerciseName} is not currently in the draft plan, so it was not replaced.`);
     return;
   }
 
-  result.changed.push(`Replaced ${from.name} with ${to.name} in ${count} place${count === 1 ? "" : "s"}.`);
+  result.changed.push(`Replaced ${current.exercise.exerciseName} with ${to?.name ?? customReplacement?.exerciseName ?? toName} in ${count} place${count === 1 ? "" : "s"}.`);
+  if (customReplacement?.isCustom && customReplacement.customWarning) result.warnings.push(customReplacement.customWarning);
   recomputeVolume(plan);
 }
 
 function removeExercise(plan: GeneratedWorkoutPlan, exerciseName: string, result: ProgramEditResult) {
-  const exercise = findExercise(exerciseName);
-  if (!exercise) {
-    result.refused.push(`Could not remove "${exerciseName}" because it is not in the curated exercise library.`);
+  const target = findPlanExercise(plan, exerciseName);
+  if (!target) {
+    result.refused.push(`Could not remove "${exerciseName}" because it is not in the current draft plan.`);
     return;
   }
 
   let count = 0;
   plan.days = plan.days.map((day) => {
     const nextExercises = day.exercises.filter((item) => {
-      const keep = normalize(item.exerciseName) !== normalize(exercise.name);
+      const keep = normalize(item.exerciseName) !== normalize(target.exercise.exerciseName);
       if (!keep) count += 1;
       return keep;
     });
@@ -293,10 +405,10 @@ function removeExercise(plan: GeneratedWorkoutPlan, exerciseName: string, result
   });
 
   if (count) {
-    result.changed.push(`Removed ${exercise.name} from ${count} place${count === 1 ? "" : "s"}.`);
+    result.changed.push(`Removed ${target.exercise.exerciseName} from ${count} place${count === 1 ? "" : "s"}.`);
     recomputeVolume(plan);
   } else {
-    result.refused.push(`${exercise.name} is not currently in the draft plan.`);
+    result.refused.push(`${target.exercise.exerciseName} is not currently in the draft plan.`);
   }
 }
 
@@ -310,7 +422,16 @@ function markPainfulAndSubstitute(
 ) {
   const exercise = findExercise(exerciseName);
   if (!exercise) {
-    result.refused.push(`Custom exercise support coming later: "${exerciseName}" cannot be added to the curated painful exercise list yet.`);
+    const custom = findPlanExercise(plan, exerciseName);
+    if (!custom) {
+      result.refused.push(`Could not find "${exerciseName}" in the current draft plan to mark it painful.`);
+      return;
+    }
+    settingsPatch.painfulExercises = uniqueList([...(settingsPatch.painfulExercises ?? settings.painfulExercises), custom.exercise.exerciseName]);
+    settingsPatch.blockedExercises = uniqueList([...(settingsPatch.blockedExercises ?? settings.blockedExercises), custom.exercise.exerciseName]);
+    custom.day.exercises = custom.day.exercises.filter((item) => normalize(item.exerciseName) !== normalize(custom.exercise.exerciseName));
+    result.changed.push(`Marked custom exercise ${custom.exercise.exerciseName} as painful/blocked for this draft and removed it. Do not push through joint pain.`);
+    recomputeVolume(plan);
     return;
   }
 
@@ -548,6 +669,149 @@ function applyReplacementRequests(
   }
 }
 
+function applyAddExerciseRequests(
+  text: string,
+  plan: GeneratedWorkoutPlan,
+  profile: FitnessProfileInput,
+  settings: FitnessProgrammingSettings,
+  result: ProgramEditResult
+) {
+  const addPattern = /(?:add|include)\s+(.+?)(?:\s+to\s+([A-Za-z][A-Za-z\s-]*?))?(?=[.!?\n]|$)/gi;
+  for (const match of text.matchAll(addPattern)) {
+    const rawExercise = match[1].trim();
+    if (!rawExercise || /set|volume|rir|rest|day|week|order|recommendation/i.test(rawExercise)) continue;
+    addExerciseToPlan(plan, rawExercise, match[2]?.trim() ?? null, profile, settings, result);
+  }
+
+  const customPattern = /custom exercise:?\s+(.+?)(?=[.!?\n]|$)/gi;
+  for (const match of text.matchAll(customPattern)) {
+    addExerciseToPlan(plan, match[1], null, profile, settings, result);
+  }
+}
+
+function dayType(day: PlanDay) {
+  const value = normalize(day.name);
+  if (/pull|back/.test(value)) return "pull";
+  if (/push|chest|shoulder/.test(value)) return "push";
+  if (/leg|lower/.test(value)) return "legs";
+  if (/upper/.test(value)) return "upper";
+  if (/full/.test(value)) return "full";
+  return value.split(" ")[0] ?? value;
+}
+
+function moveDay(plan: GeneratedWorkoutPlan, dayName: string, targetIndex: number) {
+  const index = plan.days.findIndex((day) => normalize(day.name) === normalize(dayName) || normalize(day.name).includes(normalize(dayName)));
+  if (index < 0) return false;
+  const [day] = plan.days.splice(index, 1);
+  plan.days.splice(Math.max(0, Math.min(plan.days.length, targetIndex)), 0, day);
+  plan.days = plan.days.map((item, itemIndex) => ({ ...item, dayIndex: itemIndex + 1 }));
+  return true;
+}
+
+function swapDays(plan: GeneratedWorkoutPlan, firstName: string, secondName: string) {
+  const firstIndex = plan.days.findIndex((day) => normalize(day.name) === normalize(firstName) || normalize(day.name).includes(normalize(firstName)));
+  const secondIndex = plan.days.findIndex((day) => normalize(day.name) === normalize(secondName) || normalize(day.name).includes(normalize(secondName)));
+  if (firstIndex < 0 || secondIndex < 0) return false;
+  const first = plan.days[firstIndex];
+  plan.days[firstIndex] = plan.days[secondIndex];
+  plan.days[secondIndex] = first;
+  plan.days = plan.days.map((item, itemIndex) => ({ ...item, dayIndex: itemIndex + 1 }));
+  return true;
+}
+
+function applyDayReorderRequests(text: string, plan: GeneratedWorkoutPlan, result: ProgramEditResult) {
+  const normalized = normalize(text);
+  let changed = false;
+  let restIndex: number | undefined;
+
+  const swapPattern = /swap\s+(.+?)\s+with\s+(.+?)(?=[.!?\n]|$)/gi;
+  for (const match of text.matchAll(swapPattern)) {
+    if (swapDays(plan, match[1].trim(), match[2].trim())) {
+      changed = true;
+      result.changed.push(`Swapped ${match[1].trim()} with ${match[2].trim()}.`);
+    }
+  }
+
+  const beforePattern = /move\s+(.+?)\s+before\s+(.+?)(?=[.!?\n]|$)/gi;
+  for (const match of text.matchAll(beforePattern)) {
+    const target = findDay(plan, match[2].trim());
+    if (target && moveDay(plan, match[1].trim(), Math.max(0, target.dayIndex - 1))) {
+      changed = true;
+      result.changed.push(`Moved ${match[1].trim()} before ${target.name}.`);
+    }
+  }
+
+  const afterPattern = /(?:move|put)\s+(.+?)\s+after\s+(.+?)(?=[.!?\n]|$)/gi;
+  for (const match of text.matchAll(afterPattern)) {
+    const targetName = match[2].trim();
+    if (/rest day|rest/.test(normalize(targetName))) {
+      const moving = findDay(plan, match[1].trim());
+      if (moving) {
+        const targetIndex = Math.min(plan.days.length - 1, Math.max(0, Math.ceil(plan.days.length / 2)));
+        moveDay(plan, moving.name, targetIndex);
+        restIndex = targetIndex;
+        changed = true;
+        result.changed.push(`Placed a rest day before ${moving.name}.`);
+      }
+      continue;
+    }
+    const target = findDay(plan, targetName);
+    if (target && moveDay(plan, match[1].trim(), target.dayIndex)) {
+      changed = true;
+      result.changed.push(`Moved ${match[1].trim()} after ${target.name}.`);
+    }
+  }
+
+  const orderMatch = text.match(/(?:change the order to|reorder to|order to)\s+(.+?)(?=[.!?\n]|$)/i);
+  if (orderMatch) {
+    const requested = orderMatch[1].split(/[,/>]+|\s+-\s+/).map((item) => normalize(item)).filter(Boolean);
+    const available = [...plan.days];
+    const ordered: PlanDay[] = [];
+    for (const token of requested) {
+      if (/rest/.test(token)) {
+        restIndex = ordered.length;
+        continue;
+      }
+      const index = available.findIndex((day) => {
+        const type = dayType(day);
+        return token.includes(type) || type.includes(token) || normalize(day.name).includes(token);
+      });
+      if (index >= 0) {
+        ordered.push(available[index]);
+        available.splice(index, 1);
+      }
+    }
+    if (ordered.length) {
+      plan.days = [...ordered, ...available].map((day, index) => ({ ...day, dayIndex: index + 1 }));
+      changed = true;
+      result.changed.push(`Changed training-day order to ${plan.days.map((day) => day.name).join(" > ")}.`);
+    }
+  }
+
+  if (/harder leg day away from pull|legs b.*spine-sparing|spine sparing day.*later/.test(normalized)) {
+    const legsB = findDay(plan, "Legs B") ?? findDay(plan, "Lower B");
+    if (legsB) {
+      legsB.recoveryRole = "Spine-sparing lower day placed later in the week to reduce pull-day overlap.";
+      legsB.spinalLoading = "low";
+      legsB.exercises = legsB.exercises.map((exercise) =>
+        exercise.spinalLoading === "high"
+          ? { ...exercise, spinalLoading: "moderate", targetRir: Math.min(4, exercise.targetRir + 1), substitutionNote: "Kept conservative for spine-sparing day." }
+          : exercise
+      );
+      moveDay(plan, legsB.name, plan.days.length - 1);
+      changed = true;
+      result.changed.push(`${legsB.name} is now treated as the spine-sparing lower day and moved later in the week.`);
+    }
+  }
+
+  if (changed) {
+    rebuildWeeklyLayout(plan, restIndex);
+    const warnings = analyzeRecoveryWarnings(plan);
+    result.warnings.push(...warnings);
+    result.summary.push("Preview the reordered week before applying. Exercises, sets, reps, RIR, rest, notes, and labels were preserved.");
+  }
+}
+
 function applyPainRequests(
   text: string,
   plan: GeneratedWorkoutPlan,
@@ -593,10 +857,28 @@ export function editWorkoutPlanWithNaturalLanguage(input: ProgramEditInput): Pro
     return result;
   }
 
+  if (/restore the previous version|undo the last change|restore previous version/i.test(request)) {
+    const previous = [...(input.plan.versionHistory ?? [])].sort((a, b) => b.versionNumber - a.versionNumber)[1] ?? input.plan.versionHistory?.at(-1);
+    if (!previous) {
+      result.refused.push("No previous version is available in this plan session.");
+      addSummary(request, result);
+      return result;
+    }
+    draftPlan = restorePlanVersion(input.plan, previous, input.profile, settings);
+    result.draftPlan = draftPlan;
+    result.changed.push(`Prepared restore preview for version ${previous.versionNumber}.`);
+    result.warnings.push(...(draftPlan.warnings ?? []));
+    addSummary(request, result);
+    mergeWarnings(draftPlan, result);
+    return result;
+  }
+
   draftPlan = applySplitChange(request, draftPlan, input.profile, settings, result);
   result.draftPlan = draftPlan;
 
+  applyAddExerciseRequests(request, draftPlan, input.profile, settings, result);
   applyReplacementRequests(request, draftPlan, input.profile, settings, result);
+  applyDayReorderRequests(request, draftPlan, result);
   applyPainRequests(request, draftPlan, input.profile, settings, result);
   parseVolumeChanges(request, result, draftPlan);
   applyRestChanges(request, draftPlan, result);
@@ -604,7 +886,7 @@ export function editWorkoutPlanWithNaturalLanguage(input: ProgramEditInput): Pro
   applyRecoveryChanges(request, draftPlan, result);
   applyJunkVolumeRules(request, draftPlan, result);
 
-  recomputeVolume(draftPlan);
+  refreshPlanAfterEdit(draftPlan, result.changed);
   draftPlan.explanation = [
     ...(draftPlan.explanation ?? []),
     "Program Change Request applied as a deterministic draft. Review the preview before saving the plan."

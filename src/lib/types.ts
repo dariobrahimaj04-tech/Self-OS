@@ -99,6 +99,14 @@ export type PlanExercise = {
   spinalLoading?: SpinalLoading;
   exerciseTier?: ExperienceLevel | "all";
   substitutionNote?: string;
+  source?: "curated" | "custom";
+  isCustom?: boolean;
+  targetMuscleInferred?: boolean;
+  customWarning?: string;
+  technicalDifficulty?: number | "unknown" | "moderate";
+  hypertrophyRating?: number | "unknown";
+  stabilityRating?: number | "unknown";
+  notes?: string;
 };
 
 export type PlanDay = {
@@ -120,6 +128,27 @@ export type MuscleVolume = {
   recommendation: string;
 };
 
+export type PlanVersion = {
+  versionNumber: number;
+  timestamp: string;
+  label: string;
+  summary: string[];
+  plan: Omit<GeneratedWorkoutPlan, "versionHistory">;
+};
+
+export type WeeklyAdjustmentRecommendation = {
+  id: string;
+  muscle: string;
+  title: string;
+  recommendation: string;
+  reason: string;
+  action: "add_set" | "remove_set" | "maintain" | "replace_exercise" | "deload" | "rir_up" | "rir_down";
+  exerciseName?: string;
+  setDelta?: number;
+  rirDelta?: number;
+  selected?: boolean;
+};
+
 export type GeneratedWorkoutPlan = {
   name: string;
   split: string;
@@ -133,6 +162,10 @@ export type GeneratedWorkoutPlan = {
   explanation?: string[];
   warnings?: string[];
   unusedPreferredExercises?: Array<{ exercise: string; reason: string; alternatives: string[] }>;
+  versionHistory?: PlanVersion[];
+  currentVersion?: number;
+  lastChangeSummary?: string[];
+  weeklyAdjustments?: WeeklyAdjustmentRecommendation[];
 };
 
 export type DailyCheckInView = {
@@ -261,4 +294,29 @@ export type WorkoutLogView = {
   sessionDifficulty: number;
   performanceTrend: "improved" | "stable" | "dropped";
   notes?: string;
+  workoutPlanId?: string;
+  feedback?: {
+    pumpScore?: number;
+    targetMuscleFeel?: number;
+    jointPain?: "none" | "mild" | "moderate" | "severe";
+    sorenessExpected?: "low" | "moderate" | "high";
+    sessionDifficulty?: number;
+    performance?: "better" | "same" | "worse";
+    recovery?: "good" | "okay" | "poor";
+    notes?: string;
+  };
+  execution?: {
+    dayName?: string;
+    completedSets?: number;
+    skippedSets?: number;
+    totalVolumeLoad?: number;
+    musclesTrained?: string[];
+    exerciseSummaries?: Array<{
+      exerciseName: string;
+      completedSets: number;
+      skippedSets: number;
+      volumeLoad: number;
+      notes?: string;
+    }>;
+  };
 };

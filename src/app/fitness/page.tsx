@@ -30,7 +30,7 @@ export default async function FitnessPage() {
         <StatCard label="Recovery" value={profile ? `${profile.recoveryQuality}/10` : "-"} detail={profile ? `${profile.sleepAverage}h sleep avg` : "Add recovery inputs"} tone="green" />
         <StatCard label="Recent Output" value={data.performancePoints[0] ? `${data.performancePoints[0].performance}/10` : "No logs"} detail="Latest performance score" tone="amber" />
       </div>
-      <FitnessProgrammingWorkspace initialProfile={profile} initialSettings={data.fitnessSettings} />
+      <FitnessProgrammingWorkspace initialProfile={profile} initialSettings={data.fitnessSettings} initialPlan={data.activeWorkoutPlan} initialWorkoutLogs={data.workoutLogs} />
       <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_1fr]">
         <Card>
           <SectionTitle title="Curated Exercise Library Sample" subtitle="Scored for stimulus, stability, range of motion, fatigue cost, and joint friendliness." />
@@ -72,7 +72,15 @@ export default async function FitnessPage() {
         <CrudPanel
           title="Workout Log"
           resource="workoutLogs"
-          initialRows={data.workoutLogs}
+          initialRows={data.workoutLogs.map((log) => ({
+            id: log.id,
+            date: log.date,
+            title: log.title,
+            durationMinutes: log.durationMinutes,
+            sessionDifficulty: log.sessionDifficulty,
+            performanceTrend: log.performanceTrend,
+            notes: log.notes
+          }))}
           fields={[
             { name: "date", label: "Date", type: "date", required: true },
             { name: "title", label: "Workout Title", required: true },

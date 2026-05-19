@@ -5,7 +5,8 @@ import { FormEvent, useMemo, useState } from "react";
 import { FitnessPlanner } from "@/components/fitness-planner";
 import { Card, EmptyState, SectionTitle, StatCard } from "@/components/ui";
 import { curatedExerciseLibrary, defaultFitnessSettings, generateWorkoutPlan } from "@/lib/fitness-programming";
-import type { FitnessProgrammingSettings, FitnessProfileInput } from "@/lib/types";
+import { ensureInitialVersion } from "@/lib/fitness-plan-utils";
+import type { FitnessProgrammingSettings, FitnessProfileInput, GeneratedWorkoutPlan, WorkoutLogView } from "@/lib/types";
 
 const equipmentOptions = ["machines", "cables", "dumbbells", "barbell", "smith machine", "bodyweight", "ez bar"];
 const muscleOptions = ["Chest", "Back", "Shoulders", "Rear Delts", "Biceps", "Triceps", "Quads", "Hamstrings", "Glutes", "Calves", "Abs", "Forearms"];
@@ -79,10 +80,14 @@ function badgeClass(tone: "blue" | "green" | "amber" = "blue") {
 
 export function FitnessProgrammingWorkspace({
   initialProfile,
-  initialSettings
+  initialSettings,
+  initialPlan,
+  initialWorkoutLogs = []
 }: {
   initialProfile: FitnessProfileInput | null;
   initialSettings: FitnessProgrammingSettings | null;
+  initialPlan?: GeneratedWorkoutPlan | null;
+  initialWorkoutLogs?: WorkoutLogView[];
 }) {
   const [profile, setProfile] = useState<FitnessProfileInput>(initialProfile ?? defaultProfile);
   const [settings, setSettings] = useState<FitnessProgrammingSettings>({
@@ -93,7 +98,9 @@ export function FitnessProgrammingWorkspace({
   });
   const [profileStatus, setProfileStatus] = useState<string | null>(null);
   const [settingsStatus, setSettingsStatus] = useState<string | null>(null);
-  const [generated, setGenerated] = useState(() => (initialProfile ? generateWorkoutPlan(initialProfile, undefined, initialSettings ?? undefined) : null));
+  const [generated, setGenerated] = useState(() =>
+    initialPlan ? ensureInitialVersion(initialPlan) : initialProfile ? ensureInitialVersion(generateWorkoutPlan(initialProfile, undefined, initialSettings ?? undefined)) : null
+  );
 
   const complete = profileComplete(profile);
   const exerciseNames = useMemo(() => curatedExerciseLibrary.map((exercise) => exercise.name).sort(), []);
@@ -127,7 +134,7 @@ export function FitnessProgrammingWorkspace({
   function generateProgram() {
     const nextSettings = { ...settings, trainingDays: profile.daysAvailablePerWeek, preferredSplit: profile.preferredSplit };
     setSettings(nextSettings);
-    setGenerated(generateWorkoutPlan(profile, undefined, nextSettings));
+    setGenerated(ensureInitialVersion(generateWorkoutPlan(profile, undefined, nextSettings)));
   }
 
   return (
@@ -265,6 +272,7 @@ export function FitnessProgrammingWorkspace({
           settings={settings}
           onSettingsChange={setSettings}
           onProfileChange={setProfile}
+          workoutLogs={initialWorkoutLogs}
         />
       ) : (
         <EmptyState title="Create a complete fitness profile" body="The Generate Program button appears after required profile fields are complete." />
