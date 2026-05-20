@@ -2,6 +2,7 @@
 
 import { Dumbbell, Save, Settings2, Sparkles } from "lucide-react";
 import { FormEvent, useMemo, useState } from "react";
+import { CollapsibleSection } from "@/components/collapsible-section";
 import { FitnessPlanner } from "@/components/fitness-planner";
 import { Card, EmptyState, SectionTitle, StatCard } from "@/components/ui";
 import { curatedExerciseLibrary, defaultFitnessSettings, generateWorkoutPlan } from "@/lib/fitness-programming";
@@ -139,16 +140,9 @@ export function FitnessProgrammingWorkspace({
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Experience" value={profile.trainingExperience} detail={profile.monthsOrYearsTraining || "Training age not set"} tone="green" />
-        <StatCard label="Training Days" value={profile.daysAvailablePerWeek} detail={profile.preferredSplit} tone="blue" />
-        <StatCard label="Recovery" value={`${profile.recoveryQuality}/10`} detail={`${profile.sleepAverage}h sleep avg`} tone={profile.recoveryQuality >= 7 ? "green" : "amber"} />
-        <StatCard label="Goal" value={profile.primaryGoal} detail={`${profile.preferredWorkoutDuration} min sessions`} tone="amber" />
-      </div>
-
       <Card>
         <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <SectionTitle title={initialProfile ? "Edit Fitness Profile" : "Create Fitness Profile"} subtitle="RP-inspired evidence-based hypertrophy programming starts with your real constraints." />
+          <SectionTitle title="Fitness Profile Summary" subtitle="Your current programming inputs at a glance." />
           <div className="flex flex-wrap gap-2">
             <span className={badgeClass("green")}>{profile.trainingExperience}</span>
             <span className={badgeClass("blue")}>{profile.daysAvailablePerWeek} Days</span>
@@ -156,7 +150,31 @@ export function FitnessProgrammingWorkspace({
             <span className={badgeClass(profile.recoveryQuality >= 7 ? "green" : "amber")}>{recoveryLabel(profile.recoveryQuality)}</span>
           </div>
         </div>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <StatCard label="Experience" value={profile.trainingExperience} detail={profile.monthsOrYearsTraining || "Training age not set"} tone="green" />
+          <StatCard label="Training Days" value={profile.daysAvailablePerWeek} detail={profile.preferredSplit} tone="blue" />
+          <StatCard label="Recovery" value={`${profile.recoveryQuality}/10`} detail={`${profile.sleepAverage}h sleep avg`} tone={profile.recoveryQuality >= 7 ? "green" : "amber"} />
+          <StatCard label="Goal" value={profile.primaryGoal} detail={`${profile.preferredWorkoutDuration} min sessions`} tone="amber" />
+        </div>
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+          {complete ? (
+            <button className="focus-ring inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm ring-1 ring-blue-400/40 transition-colors hover:bg-blue-500 sm:w-auto" type="button" onClick={generateProgram}>
+              <Sparkles size={17} />
+              Generate Program
+            </button>
+          ) : (
+            <p className="rounded-md border border-gold/30 bg-gold/10 px-3 py-2 text-sm leading-6 text-muted">
+              Complete the profile details below before generating a program.
+            </p>
+          )}
+        </div>
+      </Card>
 
+      <CollapsibleSection
+        title={initialProfile ? "Edit Fitness Profile" : "Create Fitness Profile"}
+        subtitle="Detailed training inputs, equipment, exercise preferences, and limitations."
+        defaultOpen={!initialProfile}
+      >
         <form onSubmit={saveProfile} className="grid gap-4 lg:grid-cols-3">
           <label className="block">
             <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.11em] text-muted">Experience Level</span>
@@ -251,18 +269,18 @@ export function FitnessProgrammingWorkspace({
               <Save size={17} />
               Save Profile
             </button>
-            {complete ? (
-              <button className="focus-ring inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm ring-1 ring-blue-400/40 transition-colors hover:bg-blue-500 sm:w-auto" type="button" onClick={generateProgram}>
-                <Sparkles size={17} />
-                Generate Program
-              </button>
-            ) : null}
             {profileStatus ? <p className="text-sm text-muted">{profileStatus}</p> : null}
           </div>
         </form>
-      </Card>
+      </CollapsibleSection>
 
-      <FitnessSettingsForm settings={settings} setSettings={setSettings} onSubmit={saveSettings} status={settingsStatus} />
+      <CollapsibleSection
+        title="Fitness Programming Settings"
+        subtitle="Private defaults for splits, RIR, volume ranges, exercise preferences, and deload sensitivity."
+        defaultOpen={false}
+      >
+        <FitnessSettingsForm settings={settings} setSettings={setSettings} onSubmit={saveSettings} status={settingsStatus} embedded />
+      </CollapsibleSection>
 
       {generated ? (
         <FitnessPlanner
@@ -316,26 +334,30 @@ export function FitnessSettingsForm({
   setSettings,
   onSubmit,
   status,
-  compact = false
+  compact = false,
+  embedded = false
 }: {
   settings: FitnessProgrammingSettings;
   setSettings: (settings: FitnessProgrammingSettings) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   status?: string | null;
   compact?: boolean;
+  embedded?: boolean;
 }) {
   function update<K extends keyof FitnessProgrammingSettings>(key: K, value: FitnessProgrammingSettings[K]) {
     setSettings({ ...settings, [key]: value });
   }
 
-  return (
-    <Card>
-      <div className="mb-4 flex items-start gap-3">
-        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-blue-600 text-white ring-1 ring-blue-400/40">
-          <Settings2 size={18} />
-        </span>
-        <SectionTitle title="Fitness Programming Settings" subtitle="User-controlled defaults for generated programs. These settings are private to your account." />
-      </div>
+  const content = (
+    <>
+      {!embedded ? (
+        <div className="mb-4 flex items-start gap-3">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-blue-600 text-white ring-1 ring-blue-400/40">
+            <Settings2 size={18} />
+          </span>
+          <SectionTitle title="Fitness Programming Settings" subtitle="User-controlled defaults for generated programs. These settings are private to your account." />
+        </div>
+      ) : null}
       <form onSubmit={onSubmit} className={`grid gap-4 ${compact ? "lg:grid-cols-2" : "lg:grid-cols-3"}`}>
         <label className="block">
           <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.11em] text-muted">Preferred Split</span>
@@ -379,8 +401,10 @@ export function FitnessSettingsForm({
           {status ? <p className="text-sm text-muted">{status}</p> : null}
         </div>
       </form>
-    </Card>
+    </>
   );
+
+  return embedded ? content : <Card>{content}</Card>;
 }
 
 function NumberField({ label, value, min, max, onChange }: { label: string; value: number; min: number; max: number; onChange: (value: number) => void }) {

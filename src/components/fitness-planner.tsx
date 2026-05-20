@@ -6,7 +6,6 @@ import {
   ArrowUp,
   CheckCircle2,
   Copy,
-  History,
   Play,
   Plus,
   RotateCcw,
@@ -17,6 +16,7 @@ import {
   Wand2
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { CollapsibleSection } from "@/components/collapsible-section";
 import { ModuleAssistant } from "@/components/module-assistant";
 import { Card, ProgressBar, SectionTitle } from "@/components/ui";
 import { adaptiveRecommendations, generateWorkoutPlan } from "@/lib/fitness-programming";
@@ -659,7 +659,7 @@ export function FitnessPlanner({
       <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
         <Card>
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <SectionTitle title={currentPlan.name} subtitle={`Split: ${currentPlan.split}. Mesocycle week ${currentPlan.mesocycleWeek}. Version ${currentPlan.currentVersion ?? 1}.`} />
+            <SectionTitle title="Current Program" subtitle={`${currentPlan.name}. Split: ${currentPlan.split}. Mesocycle week ${currentPlan.mesocycleWeek}. Version ${currentPlan.currentVersion ?? 1}.`} />
             <button className={`${buttonClass("primary")} w-full sm:w-auto`} onClick={savePlan} type="button">
               <Save size={17} />
               Save Plan
@@ -767,8 +767,7 @@ export function FitnessPlanner({
           </div>
         </Card>
 
-        <Card>
-          <SectionTitle title="Add Custom Exercise" subtitle="Stored inside this program; no exercise table or migration is used." />
+        <CollapsibleSection title="Add Custom Exercise" subtitle="Stored inside this program; no exercise table or migration is used." defaultOpen={false}>
           <div className="space-y-3">
             <label className="block">
               <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.11em] text-muted">Workout Day</span>
@@ -801,7 +800,7 @@ export function FitnessPlanner({
               Custom exercises use unknown hypertrophy and stability ratings, moderate fatigue defaults, and should be edited before you rely on volume totals.
             </p>
           </div>
-        </Card>
+        </CollapsibleSection>
       </div>
 
       {reorderPreview ? (
@@ -826,36 +825,38 @@ export function FitnessPlanner({
         </Card>
       ) : null}
 
-      <ModuleAssistant
-        moduleName="Fitness Feedback"
-        placeholder="Example: Felt great today, a bit sore in shoulders, pump was nice."
-        examplePrompts={fitnessFeedbackExamples}
-        request={feedbackRequest}
-        onRequestChange={setFeedbackRequest}
-        onSubmit={parseFeedbackRequest}
-        loading={feedbackSaving}
-        preview={feedbackPreview}
-        status={feedbackAssistantStatus}
-        applyLabel={feedbackSaving ? "Saving..." : "Save Feedback"}
-        onApply={applyFeedbackPreview}
-        onCancel={() => {
-          setFeedbackPreview(null);
-          setFeedbackAssistantStatus("Preview cancelled. No workout feedback was saved.");
-        }}
-        onClear={() => {
-          setFeedbackRequest("");
-          setFeedbackPreview(null);
-          setFeedbackAssistantStatus(null);
-          setAppliedFeedbackPreviewId(null);
-        }}
-        applyDisabled={feedbackSaving || !feedbackPreview || appliedFeedbackPreviewId === feedbackPreview.id}
-        renderPreview={(item) => (
-          <FitnessFeedbackPreview
-            preview={item}
-            onChange={updateFeedbackPreview}
-          />
-        )}
-      />
+      <CollapsibleSection title="Fitness Feedback Assistant" subtitle="Turn workout notes into structured recovery, soreness, pain, pump, and performance feedback." defaultOpen={false} contentMode="outside">
+        <ModuleAssistant
+          moduleName="Fitness Feedback"
+          placeholder="Example: Felt great today, a bit sore in shoulders, pump was nice."
+          examplePrompts={fitnessFeedbackExamples}
+          request={feedbackRequest}
+          onRequestChange={setFeedbackRequest}
+          onSubmit={parseFeedbackRequest}
+          loading={feedbackSaving}
+          preview={feedbackPreview}
+          status={feedbackAssistantStatus}
+          applyLabel={feedbackSaving ? "Saving..." : "Save Feedback"}
+          onApply={applyFeedbackPreview}
+          onCancel={() => {
+            setFeedbackPreview(null);
+            setFeedbackAssistantStatus("Preview cancelled. No workout feedback was saved.");
+          }}
+          onClear={() => {
+            setFeedbackRequest("");
+            setFeedbackPreview(null);
+            setFeedbackAssistantStatus(null);
+            setAppliedFeedbackPreviewId(null);
+          }}
+          applyDisabled={feedbackSaving || !feedbackPreview || appliedFeedbackPreviewId === feedbackPreview.id}
+          renderPreview={(item) => (
+            <FitnessFeedbackPreview
+              preview={item}
+              onChange={updateFeedbackPreview}
+            />
+          )}
+        />
+      </CollapsibleSection>
 
       <Card>
         <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -931,64 +932,19 @@ export function FitnessPlanner({
         ) : null}
       </Card>
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_420px]">
-        <Card>
-          <SectionTitle title="Weekly Set Targets by Muscle" subtitle="MEV, MAV, and MRV are estimated starting zones, not fixed rules." />
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {currentPlan.volume.map((item) => (
-              <div key={item.muscle} className="rounded-lg border border-line p-3">
-                <div className="mb-2 flex items-center justify-between">
-                  <p className="font-medium text-ink">{item.muscle}</p>
-                  <p className="text-sm text-muted">{item.plannedSets} sets</p>
-                </div>
-                <ProgressBar value={item.mrv ? (item.plannedSets / item.mrv) * 100 : 0} label={`MEV ${item.mev} | MAV ${item.mav} | MRV ${item.mrv}`} />
+      <CollapsibleSection title="Weekly Set Targets by Muscle" subtitle="MEV, MAV, and MRV are estimated starting zones, not fixed rules." defaultOpen={false}>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {currentPlan.volume.map((item) => (
+            <div key={item.muscle} className="rounded-lg border border-line p-3">
+              <div className="mb-2 flex items-center justify-between">
+                <p className="font-medium text-ink">{item.muscle}</p>
+                <p className="text-sm text-muted">{item.plannedSets} sets</p>
               </div>
-            ))}
-          </div>
-        </Card>
-        <Card>
-          <SectionTitle title="Adaptive Recommendations" />
-          <div className="mb-4 space-y-3">
-            {(["pumpScore", "sessionDifficulty", "soreness", "recoveryQuality"] as const).map((key) => (
-              <label key={key} className="block">
-                <span className="mb-1 flex justify-between text-xs font-semibold uppercase tracking-[0.11em] text-muted">
-                  <span>{key.replace(/([A-Z])/g, " $1")}</span>
-                  <span>{feedback[key]}/10</span>
-                </span>
-                <input className="w-full accent-mineral" type="range" min="1" max="10" value={feedback[key]} onChange={(event) => setFeedback((current) => ({ ...current, [key]: Number(event.target.value) }))} />
-              </label>
-            ))}
-            <label className="flex items-center gap-2 text-sm">
-              <input className="accent-mineral" type="checkbox" checked={feedback.jointPain} onChange={(event) => setFeedback((current) => ({ ...current, jointPain: event.target.checked }))} />
-              Joint pain reported
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.11em] text-muted">Performance</span>
-              <select className={fieldClass()} value={feedback.performanceTrend} onChange={(event) => setFeedback((current) => ({ ...current, performanceTrend: event.target.value as Feedback["performanceTrend"] }))}>
-                <option value="improved">Improved</option>
-                <option value="stable">Stayed the same</option>
-                <option value="dropped">Dropped</option>
-              </select>
-            </label>
-            <button className={`${buttonClass("primary")} w-full`} type="button" onClick={updatePlanFromFeedback}>
-              <SlidersHorizontal size={17} />
-              Update Recommendations
-            </button>
-          </div>
-          <div className="space-y-3">
-            {adaptiveRecommendations({
-              jointPain: feedback.jointPain,
-              performanceTrend: feedback.performanceTrend,
-              soreness: feedback.soreness,
-              recoveryQuality: feedback.recoveryQuality
-            }).map((item) => (
-              <p key={item} className="rounded-lg border border-line bg-surface p-3 text-sm leading-6 text-ink">
-                {item}
-              </p>
-            ))}
-          </div>
-        </Card>
-      </div>
+              <ProgressBar value={item.mrv ? (item.plannedSets / item.mrv) * 100 : 0} label={`MEV ${item.mev} | MAV ${item.mav} | MRV ${item.mrv}`} />
+            </div>
+          ))}
+        </div>
+      </CollapsibleSection>
 
       <Card>
         <div className="mb-4 flex items-start gap-3">
@@ -997,42 +953,82 @@ export function FitnessPlanner({
           </span>
           <SectionTitle title="Weekly Adjustment Review" subtitle="Uses completed workouts, skipped sets, feedback, soreness, pain, recovery, and current MEV/MAV/MRV estimates." />
         </div>
-        <div className="grid gap-3 lg:grid-cols-2">
-          {weeklyRecommendations.map((item) => (
-            <label key={item.id} className="flex gap-3 rounded-lg border border-line bg-surface p-3 text-sm">
-              <input
-                className="mt-1 accent-mineral"
-                type="checkbox"
-                checked={effectiveSelectedAdjustmentIds.has(item.id)}
-                onChange={(event) => {
-                  const next = new Set(effectiveSelectedAdjustmentIds);
-                  if (event.target.checked) next.add(item.id);
-                  else next.delete(item.id);
-                  setSelectedAdjustmentIds(next);
-                }}
-              />
-              <span>
-                <span className="font-semibold text-ink">{item.title}</span>
-                <span className="mt-1 block leading-6 text-muted">{item.recommendation}</span>
-                <span className="mt-1 block text-xs leading-5 text-muted">{item.reason}</span>
-              </span>
-            </label>
-          ))}
-        </div>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button className={buttonClass("primary")} type="button" onClick={applySelectedWeeklyAdjustments}>Apply Selected Changes</button>
-          <button className={buttonClass("ghost")} type="button" onClick={() => setSelectedAdjustmentIds(new Set(weeklyRecommendations.map((item) => item.id)))}>Select All</button>
-          <button className={buttonClass("ghost")} type="button" onClick={() => setSelectedAdjustmentIds(new Set())}>Reject Changes</button>
+        <div className="grid gap-4 xl:grid-cols-[380px_1fr]">
+          <div className="rounded-lg border border-line bg-surface p-3">
+            <SectionTitle title="Recovery Snapshot" subtitle="Merged adaptive feedback controls." />
+            <div className="mb-4 space-y-3">
+              {(["pumpScore", "sessionDifficulty", "soreness", "recoveryQuality"] as const).map((key) => (
+                <label key={key} className="block">
+                  <span className="mb-1 flex justify-between text-xs font-semibold uppercase tracking-[0.11em] text-muted">
+                    <span>{key.replace(/([A-Z])/g, " $1")}</span>
+                    <span>{feedback[key]}/10</span>
+                  </span>
+                  <input className="w-full accent-mineral" type="range" min="1" max="10" value={feedback[key]} onChange={(event) => setFeedback((current) => ({ ...current, [key]: Number(event.target.value) }))} />
+                </label>
+              ))}
+              <label className="flex items-center gap-2 text-sm">
+                <input className="accent-mineral" type="checkbox" checked={feedback.jointPain} onChange={(event) => setFeedback((current) => ({ ...current, jointPain: event.target.checked }))} />
+                Joint pain reported
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.11em] text-muted">Performance</span>
+                <select className={fieldClass()} value={feedback.performanceTrend} onChange={(event) => setFeedback((current) => ({ ...current, performanceTrend: event.target.value as Feedback["performanceTrend"] }))}>
+                  <option value="improved">Improved</option>
+                  <option value="stable">Stayed the same</option>
+                  <option value="dropped">Dropped</option>
+                </select>
+              </label>
+              <button className={`${buttonClass("primary")} w-full`} type="button" onClick={updatePlanFromFeedback}>
+                <SlidersHorizontal size={17} />
+                Update Recommendations
+              </button>
+            </div>
+            <div className="space-y-2">
+              {adaptiveRecommendations({
+                jointPain: feedback.jointPain,
+                performanceTrend: feedback.performanceTrend,
+                soreness: feedback.soreness,
+                recoveryQuality: feedback.recoveryQuality
+              }).map((item) => (
+                <p key={item} className="rounded-lg border border-line bg-panel p-3 text-sm leading-6 text-ink">
+                  {item}
+                </p>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="grid gap-3 lg:grid-cols-2">
+              {weeklyRecommendations.map((item) => (
+                <label key={item.id} className="flex gap-3 rounded-lg border border-line bg-surface p-3 text-sm">
+                  <input
+                    className="mt-1 accent-mineral"
+                    type="checkbox"
+                    checked={effectiveSelectedAdjustmentIds.has(item.id)}
+                    onChange={(event) => {
+                      const next = new Set(effectiveSelectedAdjustmentIds);
+                      if (event.target.checked) next.add(item.id);
+                      else next.delete(item.id);
+                      setSelectedAdjustmentIds(next);
+                    }}
+                  />
+                  <span>
+                    <span className="font-semibold text-ink">{item.title}</span>
+                    <span className="mt-1 block leading-6 text-muted">{item.recommendation}</span>
+                    <span className="mt-1 block text-xs leading-5 text-muted">{item.reason}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button className={buttonClass("primary")} type="button" onClick={applySelectedWeeklyAdjustments}>Apply Selected Changes</button>
+              <button className={buttonClass("ghost")} type="button" onClick={() => setSelectedAdjustmentIds(new Set(weeklyRecommendations.map((item) => item.id)))}>Select All</button>
+              <button className={buttonClass("ghost")} type="button" onClick={() => setSelectedAdjustmentIds(new Set())}>Reject Changes</button>
+            </div>
+          </div>
         </div>
       </Card>
 
-      <Card>
-        <div className="mb-4 flex items-start gap-3">
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-blue-600 text-white ring-1 ring-blue-400/40">
-            <History size={18} />
-          </span>
-          <SectionTitle title="Plan Version History" subtitle="Meaningful program changes create snapshots. Restores are previewed and checked for blocked or painful exercises." />
-        </div>
+      <CollapsibleSection title="Plan Version History" subtitle="Meaningful program changes create snapshots. Restores are previewed and checked for blocked or painful exercises." defaultOpen={false}>
         <div className="space-y-3">
           {sortedVersions.map((version) => {
             const compare = compareVersion === version.versionNumber;
@@ -1062,33 +1058,34 @@ export function FitnessPlanner({
             );
           })}
         </div>
-      </Card>
+      </CollapsibleSection>
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_420px]">
-        <Card>
-          <SectionTitle title="Program Explanation" subtitle="Why the generator made these choices." />
-          <div className="space-y-3">
-            {currentPlan.explanation?.map((item) => (
-              <p key={item} className="rounded-lg border border-line bg-surface p-3 text-sm leading-6 text-muted">{item}</p>
-            ))}
+      <CollapsibleSection title="Program Explanation" subtitle="Why the generator made these choices, including RIR progression." defaultOpen={false}>
+        <div className="grid gap-4 lg:grid-cols-[1fr_420px]">
+          <div>
+            <SectionTitle title="Split and Exercise Logic" />
+            <div className="space-y-3">
+              {currentPlan.explanation?.map((item) => (
+                <p key={item} className="rounded-lg border border-line bg-surface p-3 text-sm leading-6 text-muted">{item}</p>
+              ))}
+            </div>
           </div>
-        </Card>
-        <Card>
-          <SectionTitle title="RIR Progression" subtitle="Mesocycle progression is conservative by default." />
-          <div className="space-y-3">
-            {currentPlan.rirProgression?.map((item) => (
-              <div key={item.week} className="rounded-lg border border-line bg-surface p-3 text-sm">
-                <p className="font-semibold text-ink">Week {item.week}: {item.targetRir}</p>
-                <p className="mt-1 leading-6 text-muted">{item.note}</p>
-              </div>
-            ))}
+          <div>
+            <SectionTitle title="RIR Progression" subtitle="Mesocycle progression is conservative by default." />
+            <div className="space-y-3">
+              {currentPlan.rirProgression?.map((item) => (
+                <div key={item.week} className="rounded-lg border border-line bg-surface p-3 text-sm">
+                  <p className="font-semibold text-ink">Week {item.week}: {item.targetRir}</p>
+                  <p className="mt-1 leading-6 text-muted">{item.note}</p>
+                </div>
+              ))}
+            </div>
           </div>
-        </Card>
-      </div>
+        </div>
+      </CollapsibleSection>
 
       {currentPlan.unusedPreferredExercises?.length ? (
-        <Card>
-          <SectionTitle title="Preferred Exercises Not Used" subtitle="Preferred exercises are prioritized, but not forced through fatigue, pain, or recovery filters." />
+        <CollapsibleSection title="Preferred Exercises Not Used" subtitle="Preferred exercises are prioritized, but not forced through fatigue, pain, or recovery filters." defaultOpen={false}>
           <div className="grid gap-3 md:grid-cols-2">
             {currentPlan.unusedPreferredExercises.map((item) => (
               <div key={item.exercise} className="rounded-lg border border-line bg-surface p-3 text-sm">
@@ -1098,7 +1095,7 @@ export function FitnessPlanner({
               </div>
             ))}
           </div>
-        </Card>
+        </CollapsibleSection>
       ) : null}
 
       {activeWorkoutDay ? (
