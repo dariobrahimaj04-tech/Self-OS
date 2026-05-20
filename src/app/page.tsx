@@ -36,11 +36,59 @@ type ActivityItem = {
   href: string;
 };
 
+type DailyScoreCategory = {
+  label: string;
+  detail: string;
+  points: number;
+  max: number;
+  available: boolean;
+  href: string;
+  action: string;
+  tone: DashboardItem["tone"];
+};
+
+type DailyScoreResult = {
+  score: number;
+  label: string;
+  tone: DashboardItem["tone"];
+  explanation: string;
+  suggestion: string;
+  suggestionHref: string;
+  trend: string;
+  categories: DailyScoreCategory[];
+  recoveryBonus: {
+    available: boolean;
+    points: number;
+    max: number;
+    detail: string;
+  };
+};
+
 const priorityWeight: Record<string, number> = {
   High: 3,
   Medium: 2,
   Low: 1
 };
+
+function boundedScore(value: number) {
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function categoryTone(points: number, max: number): DashboardItem["tone"] {
+  if (!max) return "default";
+  const ratio = points / max;
+  if (ratio >= 0.85) return "green";
+  if (ratio >= 0.6) return "blue";
+  if (ratio >= 0.35) return "amber";
+  return "red";
+}
+
+function dailyScoreLabel(score: number, availableCategories: number) {
+  if (!availableCategories) return { label: "Needs Data", tone: "default" as const };
+  if (score >= 85) return { label: "Excellent", tone: "green" as const };
+  if (score >= 70) return { label: "Good", tone: "blue" as const };
+  return { label: "Needs Attention", tone: score >= 50 ? "amber" as const : "red" as const };
+}
 
 function activeGoals(goals: GoalView[]) {
   return goals
@@ -49,6 +97,205 @@ function activeGoals(goals: GoalView[]) {
       const priorityDelta = (priorityWeight[b.priority] ?? 0) - (priorityWeight[a.priority] ?? 0);
       return priorityDelta || a.progressPercentage - b.progressPercentage;
     });
+}
+
+function buildDailyScore(data: SelfOsData, today: string): DailyScoreResult {
+  const todayMeals = data.meals.filter((meal) => meal.date === today);
+  const todayCheckIn = data.checkIns.find((entry) => entry.date === today);
+  const moodLogged = data.moodLogs.some((entry) => entry.date === today) || Boolean(todayCheckIn);
+  const workoutLogged = data.workoutLogs.some((log) => log.date === today);
+  const goals = activeGoals(data.goals);
+  const categories: DailyScoreCategory[] = [];
+
+  if (data.habits.length) {
+    const completed = data.habits.filter((habit) => habit.completedToday).length;
+    const points = Math.round((completed / data.habits.length) * 25);
+    categories.push({
+      label: "Habits completion",
+      detail: `${completed} of ${data.habits.length} habits complete today.`,
+      points,
+      max: 25,
+      available: true,
+      href: "/habits",
+      action: "Check habits",
+      tone: categoryTone(points, 25)
+    });
+  } else {
+    categories.push({
+      label: "Habits completion",
+      detail: "Not enough habit data yet. Add habits to include this category.",
+      points: 0,
+      max: 25,
+      available: false,
+      href: "/habits",
+      action: "Create habit",
+      tone: "default"
+    });
+  }
+
+  if (workoutLogged || data.activeWorkoutPlan || data.workoutLogs.length) {
+    const points = workoutLogged ? 20 : data.activeWorkoutPlan ? 8 : 6;
+    categories.push({
+      label: "Workout / fitness activity",
+      detail: workoutLogged
+        ? "Workout activity is logged for today."
+        : data.activeWorkoutPlan
+          ? `${data.activeWorkoutPlan.name} is ready, but no workout is logged today.`
+          : "Fitness history exists, but no workout is logged today.",
+      points,
+      max: 20,
+      available: true,
+      href: "/fitness",
+      action: workoutLogged ? "Review workout" : "Start workout",
+      tone: categoryTone(points, 20)
+    });
+  } else {
+    categories.push({
+      label: "Workout / fitness activity",
+      detail: "Not enough fitness data yet. Create a plan or log a workout to include this category.",
+      points: 0,
+      max: 20,
+      available: false,
+      href: "/fitness",
+      action: "Open fitness",
+      tone: "default"
+    });
+  }
+
+  if (data.meals.length) {
+    const points = todayMeals.length >= 3 ? 20 : todayMeals.length === 2 ? 17 : todayMeals.length === 1 ? 12 : 5;
+    categories.push({
+      label: "Nutrition logging",
+      detail: todayMeals.length
+        ? `${todayMeals.length} meal${todayMeals.length === 1 ? "" : "s"} logged today.`
+        : "Nutrition history exists, but nothing is logged today.",
+      points,
+      max: 20,
+      available: true,
+      href: "/nutrition",
+      action: "Log meal",
+      tone: categoryTone(points, 20)
+    });
+  } else {
+    categories.push({
+      label: "Nutrition logging",
+      detail: "Not enough nutrition data yet. Log a meal to include this category.",
+      points: 0,
+      max: 20,
+      available: false,
+      href: "/nutrition",
+      action: "Log meal",
+      tone: "default"
+    });
+  }
+
+  if (data.moodLogs.length || data.checkIns.length) {
+    const points = moodLogged ? 15 : 5;
+    categories.push({
+      label: "Mood check-in",
+      detail: moodLogged ? "Mood or daily check-in is logged for today." : "Mood history exists, but today has no check-in yet.",
+      points,
+      max: 15,
+      available: true,
+      href: "/mood",
+      action: "Add mood",
+      tone: categoryTone(points, 15)
+    });
+  } else {
+    categories.push({
+      label: "Mood check-in",
+      detail: "Not enough mood data yet. Add a mood entry or daily check-in to include this category.",
+      points: 0,
+      max: 15,
+      available: false,
+      href: "/mood",
+      action: "Add mood",
+      tone: "default"
+    });
+  }
+
+  if (data.goals.length) {
+    const active = goals.length;
+    const hasProgressSignal = goals.some((goal) => goal.progressPercentage > 0 || Boolean(goal.weeklyReviewNotes));
+    const avgProgress = average(goals.map((goal) => goal.progressPercentage));
+    const points = active ? Math.min(15, hasProgressSignal ? Math.max(8, Math.round(6 + avgProgress * 0.09)) : 5) : 15;
+    categories.push({
+      label: "Goal progress updates",
+      detail: active
+        ? "Using current goal progress and weekly review notes because per-day goal update timestamps are not stored yet."
+        : "No active goals need updates right now.",
+      points,
+      max: 15,
+      available: true,
+      href: "/goals",
+      action: active ? "Update goal" : "Review goals",
+      tone: categoryTone(points, 15)
+    });
+  } else {
+    categories.push({
+      label: "Goal progress updates",
+      detail: "Not enough goal data yet. Add an active goal to include this category.",
+      points: 0,
+      max: 15,
+      available: false,
+      href: "/goals",
+      action: "Create goal",
+      tone: "default"
+    });
+  }
+
+  let recoveryBonus = {
+    available: false,
+    points: 0,
+    max: 5,
+    detail: "No sleep or recovery data is available for today's supporting bonus."
+  };
+
+  if (todayCheckIn) {
+    const sleepHoursBonus = todayCheckIn.sleepHours >= 7 && todayCheckIn.sleepHours <= 9 ? 3 : todayCheckIn.sleepHours >= 6 ? 1 : 0;
+    const sleepQualityBonus = todayCheckIn.sleepQuality >= 7 ? 2 : todayCheckIn.sleepQuality >= 5 ? 1 : 0;
+    recoveryBonus = {
+      available: true,
+      points: sleepHoursBonus + sleepQualityBonus,
+      max: 5,
+      detail: `${todayCheckIn.sleepHours}h sleep and ${todayCheckIn.sleepQuality}/10 sleep quality from today's check-in.`
+    };
+  } else if (data.fitnessProfile) {
+    const points = data.fitnessProfile.recoveryQuality >= 8 ? 4 : data.fitnessProfile.recoveryQuality >= 6 ? 2 : 0;
+    recoveryBonus = {
+      available: true,
+      points,
+      max: 5,
+      detail: `${data.fitnessProfile.recoveryQuality}/10 recovery quality from your fitness profile.`
+    };
+  }
+
+  const availableCategories = categories.filter((category) => category.available);
+  const availablePoints = sum(availableCategories.map((category) => category.points));
+  const availableMax = sum(availableCategories.map((category) => category.max));
+  const normalizedBase = availableMax ? (availablePoints / availableMax) * 95 : 0;
+  const score = boundedScore(normalizedBase + recoveryBonus.points);
+  const label = dailyScoreLabel(score, availableCategories.length);
+  const improvement =
+    categories.find((category) => category.available && category.points / category.max < 0.8) ??
+    categories.find((category) => !category.available) ??
+    categories[0];
+  const missingCount = categories.filter((category) => !category.available).length;
+  const strongCount = availableCategories.filter((category) => category.points / category.max >= 0.8).length;
+
+  return {
+    score,
+    label: label.label,
+    tone: label.tone,
+    explanation: availableCategories.length
+      ? `${strongCount} of ${availableCategories.length} scored areas are on track${missingCount ? `; ${missingCount} area${missingCount === 1 ? "" : "s"} marked not enough data.` : "."} ${recoveryBonus.available ? `Recovery support adds ${recoveryBonus.points} bonus point${recoveryBonus.points === 1 ? "" : "s"}.` : "No recovery bonus is available yet."}`
+      : "Start tracking one or two core areas to generate a more meaningful daily score.",
+    suggestion: improvement ? improvement.action : "Add today's first log",
+    suggestionHref: improvement ? improvement.href : "/check-in",
+    trend: "Trend placeholder: historical Daily Score storage is not enabled yet.",
+    categories,
+    recoveryBonus
+  };
 }
 
 function buildFocusItems(data: SelfOsData, today: string): DashboardItem[] {
@@ -228,10 +475,60 @@ function QuickAction({
   );
 }
 
+function DailyScoreCard({ dailyScore }: { dailyScore: DailyScoreResult }) {
+  return (
+    <Card className="h-full">
+      <div className="flex items-start justify-between gap-3">
+        <SectionTitle title="Daily Score" subtitle="A rule-based view of today's logged momentum." />
+        <StatusPill tone={dailyScore.tone}>{dailyScore.label}</StatusPill>
+      </div>
+      <div className="mt-2 flex items-end gap-2">
+        <p className="text-5xl font-semibold tracking-normal text-ink">{dailyScore.score}</p>
+        <p className="pb-2 text-sm font-semibold text-muted">/100</p>
+      </div>
+      <div className="mt-4">
+        <ProgressBar value={dailyScore.score} label={dailyScore.trend} />
+      </div>
+      <p className="mt-4 text-sm leading-6 text-muted">{dailyScore.explanation}</p>
+
+      <div className="mt-5 space-y-3">
+        {dailyScore.categories.map((category) => (
+          <div key={category.label} className="rounded-lg border border-line bg-surface p-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-semibold text-ink">{category.label}</p>
+              <StatusPill tone={category.tone}>{category.available ? `${category.points}/${category.max}` : "Not enough data"}</StatusPill>
+            </div>
+            <p className="mt-1 text-xs leading-5 text-muted">{category.detail}</p>
+            {category.available ? <div className="mt-2"><ProgressBar value={(category.points / category.max) * 100} /></div> : null}
+          </div>
+        ))}
+        <div className="rounded-lg border border-line bg-surface p-3">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold text-ink">Sleep / recovery support</p>
+            <StatusPill tone={dailyScore.recoveryBonus.points ? "green" : "default"}>
+              {dailyScore.recoveryBonus.available ? `+${dailyScore.recoveryBonus.points}/${dailyScore.recoveryBonus.max}` : "Not enough data"}
+            </StatusPill>
+          </div>
+          <p className="mt-1 text-xs leading-5 text-muted">{dailyScore.recoveryBonus.detail}</p>
+        </div>
+      </div>
+
+      <Link
+        href={dailyScore.suggestionHref}
+        className="focus-ring mt-5 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-mineral px-4 text-sm font-semibold text-[#041018] transition-colors hover:bg-mineral/90"
+      >
+        {dailyScore.suggestion}
+        <ArrowRight size={16} />
+      </Link>
+    </Card>
+  );
+}
+
 export default async function DashboardPage() {
   const user = await requireUser();
   const data = await getSelfOsData(user.id);
   const today = todayIso();
+  const dailyScore = buildDailyScore(data, today);
   const focusItems = buildFocusItems(data, today);
   const insights = buildInsights(data, today);
   const recentActivity = buildRecentActivity(data);
@@ -256,11 +553,14 @@ export default async function DashboardPage() {
         description="A focused operating view for what needs attention, what is already handled, and the next useful action."
       />
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Workout" value={workoutLogged ? "Logged" : "Open"} detail={data.activeWorkoutPlan?.name ?? "Fitness tracker"} tone={workoutLogged ? "green" : "blue"} />
-        <StatCard label="Nutrition" value={todayMeals.length ? `${todayMeals.length} meals` : "No meals"} detail={`${nutrition.protein}g protein, ${nutrition.carbs}g carbs`} tone={todayMeals.length ? "green" : "amber"} />
-        <StatCard label="Habits" value={`${habitsDone}/${data.habits.length}`} detail={habitsDue ? `${habitsDue} due today` : "All clear"} tone={habitsDue ? "amber" : "green"} />
-        <StatCard label="Mood" value={moodLogged ? "Checked in" : "Open"} detail={moodLogged ? "Today's mood is logged" : "Add a mood entry"} tone={moodLogged ? "green" : "default"} />
+      <div className="grid gap-5 xl:grid-cols-[420px_1fr]">
+        <DailyScoreCard dailyScore={dailyScore} />
+        <div className="grid gap-4 md:grid-cols-2">
+          <StatCard label="Workout" value={workoutLogged ? "Logged" : "Open"} detail={data.activeWorkoutPlan?.name ?? "Fitness tracker"} tone={workoutLogged ? "green" : "blue"} />
+          <StatCard label="Nutrition" value={todayMeals.length ? `${todayMeals.length} meals` : "No meals"} detail={`${nutrition.protein}g protein, ${nutrition.carbs}g carbs`} tone={todayMeals.length ? "green" : "amber"} />
+          <StatCard label="Habits" value={`${habitsDone}/${data.habits.length}`} detail={habitsDue ? `${habitsDue} due today` : "All clear"} tone={habitsDue ? "amber" : "green"} />
+          <StatCard label="Mood" value={moodLogged ? "Checked in" : "Open"} detail={moodLogged ? "Today's mood is logged" : "Add a mood entry"} tone={moodLogged ? "green" : "default"} />
+        </div>
       </div>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
