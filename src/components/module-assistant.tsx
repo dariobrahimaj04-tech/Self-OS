@@ -21,6 +21,7 @@ const confidenceStyles: Record<AssistantConfidence, string> = {
 
 export function ModuleAssistant<TPreview extends ModuleAssistantPreview>({
   moduleName,
+  title,
   placeholder,
   examplePrompts,
   request,
@@ -39,6 +40,7 @@ export function ModuleAssistant<TPreview extends ModuleAssistantPreview>({
   renderPreview
 }: {
   moduleName: string;
+  title?: string;
   placeholder: string;
   examplePrompts: string[];
   request: string;
@@ -66,7 +68,7 @@ export function ModuleAssistant<TPreview extends ModuleAssistantPreview>({
             <Sparkles size={18} />
           </span>
           <SectionTitle
-            title={`${moduleName} Assistant`}
+            title={title ?? `${moduleName} Assistant`}
             subtitle="Rule-based preview first. Nothing important is saved until you apply it."
           />
         </div>

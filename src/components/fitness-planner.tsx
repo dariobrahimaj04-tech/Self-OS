@@ -17,6 +17,7 @@ import {
   Wand2
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { ModuleAssistant } from "@/components/module-assistant";
 import { Card, ProgressBar, SectionTitle } from "@/components/ui";
 import { adaptiveRecommendations, generateWorkoutPlan } from "@/lib/fitness-programming";
 import {
@@ -32,6 +33,7 @@ import {
   refreshPlanAfterEdit,
   restorePlanVersion
 } from "@/lib/fitness-plan-utils";
+import { parseFitnessFeedbackAssistantRequest, type FitnessFeedbackAssistantPreview } from "@/lib/module-assistant-parsers";
 import type {
   FitnessProgrammingSettings,
   FitnessProfileInput,
@@ -94,6 +96,14 @@ const defaultManualExercise = {
   restSeconds: 120,
   notes: ""
 };
+
+const fitnessFeedbackExamples = [
+  "Felt great today, a bit sore in shoulders, pump was nice.",
+  "Workout was hard, chest pump was good, elbows felt a little weird.",
+  "Performance was better today, recovery felt good.",
+  "Legs felt sore and lower back was tired.",
+  "Shoulder pump was great but joints felt fine."
+];
 
 function compactPlanKey(plan: GeneratedWorkoutPlan) {
   return `${plan.name}-${plan.days.length}-${plan.days.map((day) => `${day.name}:${day.exercises.length}`).join("|")}`;
@@ -170,6 +180,11 @@ export function FitnessPlanner({
   const [changeRequest, setChangeRequest] = useState("");
   const [editResult, setEditResult] = useState<NaturalLanguageEditResult | null>(null);
   const [editorStatus, setEditorStatus] = useState<string | null>(null);
+  const [feedbackRequest, setFeedbackRequest] = useState("");
+  const [feedbackPreview, setFeedbackPreview] = useState<FitnessFeedbackAssistantPreview | null>(null);
+  const [feedbackAssistantStatus, setFeedbackAssistantStatus] = useState<string | null>(null);
+  const [feedbackSaving, setFeedbackSaving] = useState(false);
+  const [appliedFeedbackPreviewId, setAppliedFeedbackPreviewId] = useState<string | null>(null);
   const [manualExercise, setManualExercise] = useState(defaultManualExercise);
   const [reorderPreview, setReorderPreview] = useState<ReorderPreview | null>(null);
   const [compareVersion, setCompareVersion] = useState<number | null>(null);
@@ -238,6 +253,62 @@ export function FitnessPlanner({
       body: JSON.stringify(currentPlan)
     });
     setSaveStatus(response.ok ? "Program saved to your account with JSON metadata for custom exercises and versions." : "Could not save the program.");
+  }
+
+  function updateFeedbackPreview(patch: Partial<FitnessFeedbackAssistantPreview>) {
+    setFeedbackPreview((current) => (current ? { ...current, ...patch } : current));
+    setAppliedFeedbackPreviewId(null);
+  }
+
+  function parseFeedbackRequest() {
+    setFeedbackPreview(parseFitnessFeedbackAssistantRequest(feedbackRequest));
+    setFeedbackAssistantStatus(null);
+    setAppliedFeedbackPreviewId(null);
+  }
+
+  async function applyFeedbackPreview() {
+    if (!feedbackPreview || feedbackSaving || appliedFeedbackPreviewId === feedbackPreview.id) return;
+    setFeedbackSaving(true);
+    setFeedbackAssistantStatus("Saving structured workout feedback...");
+    try {
+      const response = await fetch("/api/assistants/fitness-feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(feedbackPreview)
+      });
+      const json = (await response.json().catch(() => null)) as { data?: { id?: string }; error?: string } | null;
+      if (!response.ok) throw new Error(json?.error ?? "Could not save workout feedback.");
+      const localLog: WorkoutLogView = {
+        id: json?.data?.id ?? `assistant-${Date.now()}`,
+        date: feedbackPreview.date,
+        title: feedbackPreview.titleText,
+        durationMinutes: 0,
+        sessionDifficulty: feedbackPreview.sessionDifficulty,
+        performanceTrend: mapWorkoutTrend(feedbackPreview.performance),
+        notes: feedbackPreview.notes,
+        feedback: {
+          pumpScore: feedbackPreview.pumpQuality,
+          targetMuscleFeel: feedbackPreview.targetMuscleFeel,
+          jointPain: feedbackPreview.jointPain,
+          sorenessExpected: feedbackPreview.sorenessLevel,
+          sessionDifficulty: feedbackPreview.sessionDifficulty,
+          performance: feedbackPreview.performance,
+          recovery: feedbackPreview.recovery,
+          notes: feedbackPreview.notes
+        }
+      };
+      setLogs((current) => [localLog, ...current]);
+      setAppliedFeedbackPreviewId(feedbackPreview.id);
+      setFeedbackAssistantStatus(
+        feedbackPreview.jointPain === "none"
+          ? "Saved workout feedback."
+          : "Saved workout feedback. Joint pain was flagged; review substitutions and do not push through pain."
+      );
+    } catch (error) {
+      setFeedbackAssistantStatus(error instanceof Error ? error.message : "Could not save workout feedback.");
+    } finally {
+      setFeedbackSaving(false);
+    }
   }
 
   function openWorkout(day: PlanDay) {
@@ -755,6 +826,37 @@ export function FitnessPlanner({
         </Card>
       ) : null}
 
+      <ModuleAssistant
+        moduleName="Fitness Feedback"
+        placeholder="Example: Felt great today, a bit sore in shoulders, pump was nice."
+        examplePrompts={fitnessFeedbackExamples}
+        request={feedbackRequest}
+        onRequestChange={setFeedbackRequest}
+        onSubmit={parseFeedbackRequest}
+        loading={feedbackSaving}
+        preview={feedbackPreview}
+        status={feedbackAssistantStatus}
+        applyLabel={feedbackSaving ? "Saving..." : "Save Feedback"}
+        onApply={applyFeedbackPreview}
+        onCancel={() => {
+          setFeedbackPreview(null);
+          setFeedbackAssistantStatus("Preview cancelled. No workout feedback was saved.");
+        }}
+        onClear={() => {
+          setFeedbackRequest("");
+          setFeedbackPreview(null);
+          setFeedbackAssistantStatus(null);
+          setAppliedFeedbackPreviewId(null);
+        }}
+        applyDisabled={feedbackSaving || !feedbackPreview || appliedFeedbackPreviewId === feedbackPreview.id}
+        renderPreview={(item) => (
+          <FitnessFeedbackPreview
+            preview={item}
+            onChange={updateFeedbackPreview}
+          />
+        )}
+      />
+
       <Card>
         <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="flex items-start gap-3">
@@ -1029,6 +1131,76 @@ function TextEdit({ label, value, onChange, onBlur }: { label: string; value: st
       <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.11em] text-muted">{label}</span>
       <input className={fieldClass()} value={value} onChange={(event) => onChange(event.target.value)} onBlur={onBlur} />
     </label>
+  );
+}
+
+function FitnessFeedbackPreview({
+  preview,
+  onChange
+}: {
+  preview: FitnessFeedbackAssistantPreview;
+  onChange: (patch: Partial<FitnessFeedbackAssistantPreview>) => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <label className="block">
+          <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.11em] text-muted">Date</span>
+          <input className={fieldClass()} type="date" value={preview.date} onChange={(event) => onChange({ date: event.target.value })} />
+        </label>
+        <TextEdit label="Title" value={preview.titleText} onChange={(titleText) => onChange({ titleText })} />
+        <label className="block">
+          <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.11em] text-muted">Recovery</span>
+          <select className={fieldClass()} value={preview.recovery} onChange={(event) => onChange({ recovery: event.target.value as FitnessFeedbackAssistantPreview["recovery"] })}>
+            <option value="good">Good</option>
+            <option value="okay">Okay</option>
+            <option value="poor">Poor</option>
+          </select>
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.11em] text-muted">Soreness</span>
+          <select className={fieldClass()} value={preview.sorenessLevel} onChange={(event) => onChange({ sorenessLevel: event.target.value as FitnessFeedbackAssistantPreview["sorenessLevel"] })}>
+            <option value="low">Low</option>
+            <option value="moderate">Moderate</option>
+            <option value="high">High</option>
+          </select>
+        </label>
+        <NumberEdit label="Pump 1-5" value={preview.pumpQuality} onChange={(pumpQuality) => onChange({ pumpQuality })} />
+        <NumberEdit label="Target Feel 1-5" value={preview.targetMuscleFeel} onChange={(targetMuscleFeel) => onChange({ targetMuscleFeel })} />
+        <NumberEdit label="Difficulty 1-10" value={preview.sessionDifficulty} onChange={(sessionDifficulty) => onChange({ sessionDifficulty })} />
+        <label className="block">
+          <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.11em] text-muted">Performance</span>
+          <select className={fieldClass()} value={preview.performance} onChange={(event) => onChange({ performance: event.target.value as FitnessFeedbackAssistantPreview["performance"] })}>
+            <option value="better">Better</option>
+            <option value="same">Same</option>
+            <option value="worse">Worse</option>
+          </select>
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.11em] text-muted">Joint Pain</span>
+          <select className={fieldClass()} value={preview.jointPain} onChange={(event) => onChange({ jointPain: event.target.value as FitnessFeedbackAssistantPreview["jointPain"] })}>
+            <option value="none">None</option>
+            <option value="mild">Mild</option>
+            <option value="moderate">Moderate</option>
+            <option value="severe">Severe</option>
+          </select>
+        </label>
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        <label className="block">
+          <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.11em] text-muted">Soreness Areas</span>
+          <input className={fieldClass()} value={preview.sorenessAreas.join(", ")} onChange={(event) => onChange({ sorenessAreas: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) })} />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.11em] text-muted">Affected Joints/Muscles</span>
+          <input className={fieldClass()} value={preview.affectedAreas.join(", ")} onChange={(event) => onChange({ affectedAreas: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) })} />
+        </label>
+      </div>
+      <label className="block">
+        <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.11em] text-muted">Notes</span>
+        <textarea className={areaClass()} value={preview.notes} onChange={(event) => onChange({ notes: event.target.value })} />
+      </label>
+    </div>
   );
 }
 
