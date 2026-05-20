@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   ArrowDown,
   ArrowUp,
+  ChevronDown,
   CheckCircle2,
   Copy,
   Play,
@@ -166,6 +167,9 @@ export function FitnessPlanner({
   settings,
   onSettingsChange,
   onProfileChange,
+  onPlanChange,
+  onWorkoutLogsChange,
+  onWorkoutStart,
   workoutLogs = []
 }: {
   plan: GeneratedWorkoutPlan;
@@ -173,6 +177,9 @@ export function FitnessPlanner({
   settings?: FitnessProgrammingSettings | null;
   onSettingsChange?: (settings: FitnessProgrammingSettings) => void;
   onProfileChange?: (profile: FitnessProfileInput) => void;
+  onPlanChange?: (plan: GeneratedWorkoutPlan) => void;
+  onWorkoutLogsChange?: (logs: WorkoutLogView[]) => void;
+  onWorkoutStart?: () => void;
   workoutLogs?: WorkoutLogView[];
 }) {
   const [currentPlan, setCurrentPlan] = useState(() => ensureInitialVersion(plan));
@@ -186,10 +193,13 @@ export function FitnessPlanner({
   const [feedbackSaving, setFeedbackSaving] = useState(false);
   const [appliedFeedbackPreviewId, setAppliedFeedbackPreviewId] = useState<string | null>(null);
   const [manualExercise, setManualExercise] = useState(defaultManualExercise);
+  const [addExerciseDayIndex, setAddExerciseDayIndex] = useState<number | null>(null);
+  const [expandedDayIndexes, setExpandedDayIndexes] = useState<Set<number>>(new Set());
   const [reorderPreview, setReorderPreview] = useState<ReorderPreview | null>(null);
   const [compareVersion, setCompareVersion] = useState<number | null>(null);
   const [logs, setLogs] = useState(workoutLogs);
   const [selectedAdjustmentIds, setSelectedAdjustmentIds] = useState<Set<string> | null>(null);
+  const [showFullWeeklyAnalysis, setShowFullWeeklyAnalysis] = useState(false);
   const [activeWorkoutDay, setActiveWorkoutDay] = useState<PlanDay | null>(null);
   const [workoutSets, setWorkoutSets] = useState<WorkoutSetDraft[]>([]);
   const [restRemaining, setRestRemaining] = useState(0);
@@ -216,6 +226,7 @@ export function FitnessPlanner({
   });
 
   const weeklyRecommendations = useMemo(() => buildWeeklyAdjustmentRecommendations(currentPlan, logs), [currentPlan, logs]);
+  const actionableRecommendations = weeklyRecommendations.filter((item) => item.action !== "maintain");
   const sortedVersions = [...(currentPlan.versionHistory ?? [])].sort((a, b) => b.versionNumber - a.versionNumber);
   const effectiveSelectedAdjustmentIds = selectedAdjustmentIds ?? new Set(weeklyRecommendations.filter((item) => item.selected).map((item) => item.id));
 
@@ -224,6 +235,14 @@ export function FitnessPlanner({
     const timer = window.setInterval(() => setRestRemaining((current) => Math.max(0, current - 1)), 1000);
     return () => window.clearInterval(timer);
   }, [restRemaining]);
+
+  useEffect(() => {
+    onPlanChange?.(currentPlan);
+  }, [currentPlan, onPlanChange]);
+
+  useEffect(() => {
+    onWorkoutLogsChange?.(logs);
+  }, [logs, onWorkoutLogsChange]);
 
   function commitPlan(next: GeneratedWorkoutPlan, label: string, summary: string[]) {
     refreshPlanAfterEdit(next, summary);
@@ -269,43 +288,27 @@ export function FitnessPlanner({
   async function applyFeedbackPreview() {
     if (!feedbackPreview || feedbackSaving || appliedFeedbackPreviewId === feedbackPreview.id) return;
     setFeedbackSaving(true);
-    setFeedbackAssistantStatus("Saving structured workout feedback...");
+    setFeedbackAssistantStatus("Applying structured feedback to this workout...");
     try {
-      const response = await fetch("/api/assistants/fitness-feedback", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(feedbackPreview)
-      });
-      const json = (await response.json().catch(() => null)) as { data?: { id?: string }; error?: string } | null;
-      if (!response.ok) throw new Error(json?.error ?? "Could not save workout feedback.");
-      const localLog: WorkoutLogView = {
-        id: json?.data?.id ?? `assistant-${Date.now()}`,
-        date: feedbackPreview.date,
-        title: feedbackPreview.titleText,
-        durationMinutes: 0,
+      setWorkoutFeedback((current) => ({
+        ...current,
+        pumpQuality: feedbackPreview.pumpQuality,
+        targetMuscleFeel: feedbackPreview.targetMuscleFeel,
+        jointPain: feedbackPreview.jointPain,
+        sorenessExpected: feedbackPreview.sorenessLevel,
         sessionDifficulty: feedbackPreview.sessionDifficulty,
-        performanceTrend: mapWorkoutTrend(feedbackPreview.performance),
-        notes: feedbackPreview.notes,
-        feedback: {
-          pumpScore: feedbackPreview.pumpQuality,
-          targetMuscleFeel: feedbackPreview.targetMuscleFeel,
-          jointPain: feedbackPreview.jointPain,
-          sorenessExpected: feedbackPreview.sorenessLevel,
-          sessionDifficulty: feedbackPreview.sessionDifficulty,
-          performance: feedbackPreview.performance,
-          recovery: feedbackPreview.recovery,
-          notes: feedbackPreview.notes
-        }
-      };
-      setLogs((current) => [localLog, ...current]);
+        performance: feedbackPreview.performance,
+        recovery: feedbackPreview.recovery,
+        notes: feedbackPreview.notes
+      }));
       setAppliedFeedbackPreviewId(feedbackPreview.id);
       setFeedbackAssistantStatus(
         feedbackPreview.jointPain === "none"
-          ? "Saved workout feedback."
-          : "Saved workout feedback. Joint pain was flagged; review substitutions and do not push through pain."
+          ? "Applied to the post-workout feedback form. Finish the workout to save it."
+          : "Applied and flagged joint pain. Finish the workout to save it; do not push through pain."
       );
     } catch (error) {
-      setFeedbackAssistantStatus(error instanceof Error ? error.message : "Could not save workout feedback.");
+      setFeedbackAssistantStatus(error instanceof Error ? error.message : "Could not apply workout feedback.");
     } finally {
       setFeedbackSaving(false);
     }
@@ -328,11 +331,16 @@ export function FitnessPlanner({
         notes: ""
       }))
     );
+    onWorkoutStart?.();
     setActiveWorkoutDay(day);
     setWorkoutSets(sets);
     setWorkoutSummary(null);
     setWorkoutStatus(null);
     setRestRemaining(0);
+    setFeedbackRequest("");
+    setFeedbackPreview(null);
+    setFeedbackAssistantStatus(null);
+    setAppliedFeedbackPreviewId(null);
   }
 
   async function previewProgramChanges() {
@@ -442,6 +450,15 @@ export function FitnessPlanner({
     setChangeRequest("");
   }
 
+  function toggleDay(dayIndex: number) {
+    setExpandedDayIndexes((current) => {
+      const next = new Set(current);
+      if (next.has(dayIndex)) next.delete(dayIndex);
+      else next.add(dayIndex);
+      return next;
+    });
+  }
+
   function updateExercise(dayIndex: number, exerciseIndex: number, patch: Partial<PlanExercise>) {
     setCurrentPlan((current) => {
       const next = clonePlan(current);
@@ -477,6 +494,7 @@ export function FitnessPlanner({
     targetDay.focusMuscles = Array.from(new Set([...targetDay.focusMuscles, exercise.primaryMuscle]));
     commitPlan(next, "Added custom exercise", [`Added ${exercise.exerciseName} to ${targetDay.name}.`]);
     setManualExercise({ ...defaultManualExercise, dayIndex: day.dayIndex });
+    setAddExerciseDayIndex(null);
   }
 
   function mutateExercise(dayIndex: number, exerciseIndex: number, action: "remove" | "duplicate" | "up" | "down" | "move", targetDayIndex?: number) {
@@ -656,8 +674,7 @@ export function FitnessPlanner({
 
   return (
     <div className="space-y-5" key={compactPlanKey(currentPlan)}>
-      <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
-        <Card>
+      <Card>
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <SectionTitle title="Current Program" subtitle={`${currentPlan.name}. Split: ${currentPlan.split}. Mesocycle week ${currentPlan.mesocycleWeek}. Version ${currentPlan.currentVersion ?? 1}.`} />
             <button className={`${buttonClass("primary")} w-full sm:w-auto`} onClick={savePlan} type="button">
@@ -687,14 +704,21 @@ export function FitnessPlanner({
           ) : null}
 
           <div className="grid gap-4 xl:grid-cols-2">
-            {currentPlan.days.map((day) => (
-              <div key={day.dayIndex} className="rounded-lg border border-line p-4">
+            {currentPlan.days.map((day) => {
+              const isExpanded = expandedDayIndexes.has(day.dayIndex);
+              return (
+              <div key={day.dayIndex} className="rounded-lg border border-line bg-panel p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <h3 className="font-semibold text-ink">{day.name}</h3>
                     <p className="mt-1 text-sm text-muted">{day.focusMuscles.join(", ")}</p>
+                    <p className="mt-1 text-xs leading-5 text-muted">{day.exercises.length} exercises | {day.fatigueLevel ?? "moderate"} fatigue</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
+                    <button className={buttonClass("ghost")} type="button" onClick={() => toggleDay(day.dayIndex)} aria-expanded={isExpanded}>
+                      <ChevronDown size={15} className={isExpanded ? "rotate-180 transition-transform" : "transition-transform"} />
+                      {isExpanded ? "Hide" : "Expand"}
+                    </button>
                     <button className={buttonClass("blue")} type="button" onClick={() => openWorkout(day)}>
                       <Play size={16} />
                       Start Workout
@@ -708,6 +732,7 @@ export function FitnessPlanner({
                   </div>
                 </div>
                 {day.recoveryRole ? <p className="mt-2 text-xs leading-5 text-muted">{day.recoveryRole}</p> : null}
+                {isExpanded ? (
                 <div className="mt-3 space-y-3">
                   {day.exercises.map((exercise, exerciseIndex) => (
                     <div key={exerciseKey(day, exercise, exerciseIndex)} className="rounded-lg border border-line bg-surface p-3">
@@ -761,47 +786,60 @@ export function FitnessPlanner({
                       </label>
                     </div>
                   ))}
+                  <div className="rounded-lg border border-dashed border-line bg-surface p-3">
+                    {addExerciseDayIndex === day.dayIndex ? (
+                      <div className="space-y-3">
+                        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+                          <TextEdit label="Exercise Name" value={manualExercise.exerciseName} onChange={(value) => setManualExercise((current) => ({ ...current, dayIndex: day.dayIndex, exerciseName: value }))} />
+                          <label className="block">
+                            <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.11em] text-muted">Target Muscle</span>
+                            <select className={fieldClass()} value={manualExercise.primaryMuscle} onChange={(event) => setManualExercise((current) => ({ ...current, dayIndex: day.dayIndex, primaryMuscle: event.target.value }))}>
+                              {muscleOptions.map((muscle) => <option key={muscle} value={muscle}>{muscle}</option>)}
+                            </select>
+                          </label>
+                          <NumberEdit label="Sets" value={manualExercise.sets} onChange={(value) => setManualExercise((current) => ({ ...current, dayIndex: day.dayIndex, sets: value }))} />
+                          <TextEdit label="Reps" value={manualExercise.repRange} onChange={(value) => setManualExercise((current) => ({ ...current, dayIndex: day.dayIndex, repRange: value }))} />
+                          <NumberEdit label="RIR" value={manualExercise.targetRir} onChange={(value) => setManualExercise((current) => ({ ...current, dayIndex: day.dayIndex, targetRir: value }))} />
+                          <NumberEdit label="Rest" value={manualExercise.restSeconds} onChange={(value) => setManualExercise((current) => ({ ...current, dayIndex: day.dayIndex, restSeconds: value }))} />
+                        </div>
+                        <label className="block">
+                          <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.11em] text-muted">Notes</span>
+                          <textarea className={areaClass()} value={manualExercise.notes} onChange={(event) => setManualExercise((current) => ({ ...current, dayIndex: day.dayIndex, notes: event.target.value }))} />
+                        </label>
+                        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                          <button className={`${buttonClass("primary")} w-full sm:w-auto`} type="button" onClick={addManualExercise}>
+                            <Plus size={15} />
+                            Add Exercise
+                          </button>
+                          <button className={`${buttonClass("ghost")} w-full sm:w-auto`} type="button" onClick={() => setAddExerciseDayIndex(null)}>
+                            Cancel
+                          </button>
+                        </div>
+                        <p className="text-xs leading-5 text-muted">
+                          Custom exercises stay inside this program and use conservative unknown-rating defaults.
+                        </p>
+                      </div>
+                    ) : (
+                      <button
+                        className="focus-ring inline-flex h-9 items-center justify-center gap-2 rounded-md border border-line bg-panel px-3 text-xs font-semibold text-muted transition-colors hover:bg-mineral/10 hover:text-ink"
+                        type="button"
+                        onClick={() => {
+                          setManualExercise({ ...defaultManualExercise, dayIndex: day.dayIndex });
+                          setAddExerciseDayIndex(day.dayIndex);
+                        }}
+                      >
+                        <Plus size={14} />
+                        Add Exercise
+                      </button>
+                    )}
+                  </div>
                 </div>
+                ) : null}
               </div>
-            ))}
+              );
+            })}
           </div>
         </Card>
-
-        <CollapsibleSection title="Add Custom Exercise" subtitle="Stored inside this program; no exercise table or migration is used." defaultOpen={false}>
-          <div className="space-y-3">
-            <label className="block">
-              <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.11em] text-muted">Workout Day</span>
-              <select className={fieldClass()} value={manualExercise.dayIndex} onChange={(event) => setManualExercise((current) => ({ ...current, dayIndex: Number(event.target.value) }))}>
-                {currentPlan.days.map((day) => <option key={day.dayIndex} value={day.dayIndex}>{day.name}</option>)}
-              </select>
-            </label>
-            <TextEdit label="Exercise Name" value={manualExercise.exerciseName} onChange={(value) => setManualExercise((current) => ({ ...current, exerciseName: value }))} />
-            <label className="block">
-              <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.11em] text-muted">Target Muscle</span>
-              <select className={fieldClass()} value={manualExercise.primaryMuscle} onChange={(event) => setManualExercise((current) => ({ ...current, primaryMuscle: event.target.value }))}>
-                {muscleOptions.map((muscle) => <option key={muscle} value={muscle}>{muscle}</option>)}
-              </select>
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              <NumberEdit label="Sets" value={manualExercise.sets} onChange={(value) => setManualExercise((current) => ({ ...current, sets: value }))} />
-              <TextEdit label="Reps" value={manualExercise.repRange} onChange={(value) => setManualExercise((current) => ({ ...current, repRange: value }))} />
-              <NumberEdit label="RIR" value={manualExercise.targetRir} onChange={(value) => setManualExercise((current) => ({ ...current, targetRir: value }))} />
-              <NumberEdit label="Rest" value={manualExercise.restSeconds} onChange={(value) => setManualExercise((current) => ({ ...current, restSeconds: value }))} />
-            </div>
-            <label className="block">
-              <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.11em] text-muted">Notes</span>
-              <textarea className={areaClass()} value={manualExercise.notes} onChange={(event) => setManualExercise((current) => ({ ...current, notes: event.target.value }))} />
-            </label>
-            <button className={`${buttonClass("primary")} w-full`} type="button" onClick={addManualExercise}>
-              <Plus size={17} />
-              Add Custom Exercise
-            </button>
-            <p className="rounded-lg border border-gold/30 bg-gold/10 p-3 text-xs leading-5 text-muted">
-              Custom exercises use unknown hypertrophy and stability ratings, moderate fatigue defaults, and should be edited before you rely on volume totals.
-            </p>
-          </div>
-        </CollapsibleSection>
-      </div>
 
       {reorderPreview ? (
         <Card>
@@ -824,39 +862,6 @@ export function FitnessPlanner({
           </div>
         </Card>
       ) : null}
-
-      <CollapsibleSection title="Fitness Feedback Assistant" subtitle="Turn workout notes into structured recovery, soreness, pain, pump, and performance feedback." defaultOpen={false} contentMode="outside">
-        <ModuleAssistant
-          moduleName="Fitness Feedback"
-          placeholder="Example: Felt great today, a bit sore in shoulders, pump was nice."
-          examplePrompts={fitnessFeedbackExamples}
-          request={feedbackRequest}
-          onRequestChange={setFeedbackRequest}
-          onSubmit={parseFeedbackRequest}
-          loading={feedbackSaving}
-          preview={feedbackPreview}
-          status={feedbackAssistantStatus}
-          applyLabel={feedbackSaving ? "Saving..." : "Save Feedback"}
-          onApply={applyFeedbackPreview}
-          onCancel={() => {
-            setFeedbackPreview(null);
-            setFeedbackAssistantStatus("Preview cancelled. No workout feedback was saved.");
-          }}
-          onClear={() => {
-            setFeedbackRequest("");
-            setFeedbackPreview(null);
-            setFeedbackAssistantStatus(null);
-            setAppliedFeedbackPreviewId(null);
-          }}
-          applyDisabled={feedbackSaving || !feedbackPreview || appliedFeedbackPreviewId === feedbackPreview.id}
-          renderPreview={(item) => (
-            <FitnessFeedbackPreview
-              preview={item}
-              onChange={updateFeedbackPreview}
-            />
-          )}
-        />
-      </CollapsibleSection>
 
       <Card>
         <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -932,20 +937,6 @@ export function FitnessPlanner({
         ) : null}
       </Card>
 
-      <CollapsibleSection title="Weekly Set Targets by Muscle" subtitle="MEV, MAV, and MRV are estimated starting zones, not fixed rules." defaultOpen={false}>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {currentPlan.volume.map((item) => (
-            <div key={item.muscle} className="rounded-lg border border-line p-3">
-              <div className="mb-2 flex items-center justify-between">
-                <p className="font-medium text-ink">{item.muscle}</p>
-                <p className="text-sm text-muted">{item.plannedSets} sets</p>
-              </div>
-              <ProgressBar value={item.mrv ? (item.plannedSets / item.mrv) * 100 : 0} label={`MEV ${item.mev} | MAV ${item.mav} | MRV ${item.mrv}`} />
-            </div>
-          ))}
-        </div>
-      </CollapsibleSection>
-
       <Card>
         <div className="mb-4 flex items-start gap-3">
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-blue-600 text-white ring-1 ring-blue-400/40">
@@ -953,79 +944,96 @@ export function FitnessPlanner({
           </span>
           <SectionTitle title="Weekly Adjustment Review" subtitle="Uses completed workouts, skipped sets, feedback, soreness, pain, recovery, and current MEV/MAV/MRV estimates." />
         </div>
-        <div className="grid gap-4 xl:grid-cols-[380px_1fr]">
-          <div className="rounded-lg border border-line bg-surface p-3">
-            <SectionTitle title="Recovery Snapshot" subtitle="Merged adaptive feedback controls." />
-            <div className="mb-4 space-y-3">
-              {(["pumpScore", "sessionDifficulty", "soreness", "recoveryQuality"] as const).map((key) => (
-                <label key={key} className="block">
-                  <span className="mb-1 flex justify-between text-xs font-semibold uppercase tracking-[0.11em] text-muted">
-                    <span>{key.replace(/([A-Z])/g, " $1")}</span>
-                    <span>{feedback[key]}/10</span>
-                  </span>
-                  <input className="w-full accent-mineral" type="range" min="1" max="10" value={feedback[key]} onChange={(event) => setFeedback((current) => ({ ...current, [key]: Number(event.target.value) }))} />
+        <div className="grid gap-3 lg:grid-cols-2">
+          {(actionableRecommendations.length ? actionableRecommendations : weeklyRecommendations.slice(0, 2)).map((item) => (
+            <label key={item.id} className="flex gap-3 rounded-lg border border-line bg-surface p-3 text-sm">
+              <input
+                className="mt-1 accent-mineral"
+                type="checkbox"
+                checked={effectiveSelectedAdjustmentIds.has(item.id)}
+                onChange={(event) => {
+                  const next = new Set(effectiveSelectedAdjustmentIds);
+                  if (event.target.checked) next.add(item.id);
+                  else next.delete(item.id);
+                  setSelectedAdjustmentIds(next);
+                }}
+              />
+              <span>
+                <span className="font-semibold text-ink">{item.title}</span>
+                <span className="mt-1 block leading-6 text-muted">{item.recommendation}</span>
+                <span className="mt-1 block text-xs leading-5 text-muted">{item.reason}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+        {!actionableRecommendations.length ? (
+          <p className="mt-3 rounded-lg border border-evergreen/30 bg-evergreen/10 p-3 text-sm leading-6 text-ink">
+            No urgent volume changes are showing. Maintain the plan unless recovery or performance changes.
+          </p>
+        ) : null}
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+          <button className={`${buttonClass("primary")} w-full sm:w-auto`} type="button" onClick={applySelectedWeeklyAdjustments}>Apply Selected Changes</button>
+          <button className={`${buttonClass("ghost")} w-full sm:w-auto`} type="button" onClick={() => setSelectedAdjustmentIds(new Set(weeklyRecommendations.map((item) => item.id)))}>Select All</button>
+          <button className={`${buttonClass("ghost")} w-full sm:w-auto`} type="button" onClick={() => setSelectedAdjustmentIds(new Set())}>Reject Changes</button>
+          <button className={`${buttonClass("ghost")} w-full sm:w-auto`} type="button" onClick={() => setShowFullWeeklyAnalysis((current) => !current)}>
+            {showFullWeeklyAnalysis ? "Hide Full Analysis" : "View Full Analysis"}
+          </button>
+        </div>
+        {showFullWeeklyAnalysis ? (
+          <div className="mt-4 grid gap-4 xl:grid-cols-[380px_1fr]">
+            <div className="rounded-lg border border-line bg-surface p-3">
+              <SectionTitle title="Recovery Snapshot" subtitle="Merged adaptive feedback controls." />
+              <div className="mb-4 space-y-3">
+                {(["pumpScore", "sessionDifficulty", "soreness", "recoveryQuality"] as const).map((key) => (
+                  <label key={key} className="block">
+                    <span className="mb-1 flex justify-between text-xs font-semibold uppercase tracking-[0.11em] text-muted">
+                      <span>{key.replace(/([A-Z])/g, " $1")}</span>
+                      <span>{feedback[key]}/10</span>
+                    </span>
+                    <input className="w-full accent-mineral" type="range" min="1" max="10" value={feedback[key]} onChange={(event) => setFeedback((current) => ({ ...current, [key]: Number(event.target.value) }))} />
+                  </label>
+                ))}
+                <label className="flex items-center gap-2 text-sm">
+                  <input className="accent-mineral" type="checkbox" checked={feedback.jointPain} onChange={(event) => setFeedback((current) => ({ ...current, jointPain: event.target.checked }))} />
+                  Joint pain reported
                 </label>
-              ))}
-              <label className="flex items-center gap-2 text-sm">
-                <input className="accent-mineral" type="checkbox" checked={feedback.jointPain} onChange={(event) => setFeedback((current) => ({ ...current, jointPain: event.target.checked }))} />
-                Joint pain reported
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.11em] text-muted">Performance</span>
-                <select className={fieldClass()} value={feedback.performanceTrend} onChange={(event) => setFeedback((current) => ({ ...current, performanceTrend: event.target.value as Feedback["performanceTrend"] }))}>
-                  <option value="improved">Improved</option>
-                  <option value="stable">Stayed the same</option>
-                  <option value="dropped">Dropped</option>
-                </select>
-              </label>
-              <button className={`${buttonClass("primary")} w-full`} type="button" onClick={updatePlanFromFeedback}>
-                <SlidersHorizontal size={17} />
-                Update Recommendations
-              </button>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.11em] text-muted">Performance</span>
+                  <select className={fieldClass()} value={feedback.performanceTrend} onChange={(event) => setFeedback((current) => ({ ...current, performanceTrend: event.target.value as Feedback["performanceTrend"] }))}>
+                    <option value="improved">Improved</option>
+                    <option value="stable">Stayed the same</option>
+                    <option value="dropped">Dropped</option>
+                  </select>
+                </label>
+                <button className={`${buttonClass("primary")} w-full`} type="button" onClick={updatePlanFromFeedback}>
+                  <SlidersHorizontal size={17} />
+                  Update Recommendations
+                </button>
+              </div>
+              <div className="space-y-2">
+                {adaptiveRecommendations({
+                  jointPain: feedback.jointPain,
+                  performanceTrend: feedback.performanceTrend,
+                  soreness: feedback.soreness,
+                  recoveryQuality: feedback.recoveryQuality
+                }).map((item) => (
+                  <p key={item} className="rounded-lg border border-line bg-panel p-3 text-sm leading-6 text-ink">
+                    {item}
+                  </p>
+                ))}
+              </div>
             </div>
-            <div className="space-y-2">
-              {adaptiveRecommendations({
-                jointPain: feedback.jointPain,
-                performanceTrend: feedback.performanceTrend,
-                soreness: feedback.soreness,
-                recoveryQuality: feedback.recoveryQuality
-              }).map((item) => (
-                <p key={item} className="rounded-lg border border-line bg-panel p-3 text-sm leading-6 text-ink">
-                  {item}
+            <div className="grid gap-3">
+              {weeklyRecommendations.map((item) => (
+                <p key={item.id} className="rounded-lg border border-line bg-surface p-3 text-sm leading-6 text-muted">
+                  <span className="block font-semibold text-ink">{item.title}</span>
+                  {item.recommendation}
+                  <span className="mt-1 block text-xs leading-5 text-muted">{item.reason}</span>
                 </p>
               ))}
             </div>
           </div>
-          <div>
-            <div className="grid gap-3 lg:grid-cols-2">
-              {weeklyRecommendations.map((item) => (
-                <label key={item.id} className="flex gap-3 rounded-lg border border-line bg-surface p-3 text-sm">
-                  <input
-                    className="mt-1 accent-mineral"
-                    type="checkbox"
-                    checked={effectiveSelectedAdjustmentIds.has(item.id)}
-                    onChange={(event) => {
-                      const next = new Set(effectiveSelectedAdjustmentIds);
-                      if (event.target.checked) next.add(item.id);
-                      else next.delete(item.id);
-                      setSelectedAdjustmentIds(next);
-                    }}
-                  />
-                  <span>
-                    <span className="font-semibold text-ink">{item.title}</span>
-                    <span className="mt-1 block leading-6 text-muted">{item.recommendation}</span>
-                    <span className="mt-1 block text-xs leading-5 text-muted">{item.reason}</span>
-                  </span>
-                </label>
-              ))}
-            </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button className={buttonClass("primary")} type="button" onClick={applySelectedWeeklyAdjustments}>Apply Selected Changes</button>
-              <button className={buttonClass("ghost")} type="button" onClick={() => setSelectedAdjustmentIds(new Set(weeklyRecommendations.map((item) => item.id)))}>Select All</button>
-              <button className={buttonClass("ghost")} type="button" onClick={() => setSelectedAdjustmentIds(new Set())}>Reject Changes</button>
-            </div>
-          </div>
-        </div>
+        ) : null}
       </Card>
 
       <CollapsibleSection title="Plan Version History" subtitle="Meaningful program changes create snapshots. Restores are previewed and checked for blocked or painful exercises." defaultOpen={false}>
@@ -1107,6 +1115,11 @@ export function FitnessPlanner({
           restRemaining={restRemaining}
           status={workoutStatus}
           summary={workoutSummary}
+          feedbackRequest={feedbackRequest}
+          feedbackPreview={feedbackPreview}
+          feedbackAssistantStatus={feedbackAssistantStatus}
+          feedbackSaving={feedbackSaving}
+          appliedFeedbackPreviewId={appliedFeedbackPreviewId}
           onClose={() => setActiveWorkoutDay(null)}
           onSetChange={(id, patch) => setWorkoutSets((current) => current.map((set) => set.id === id ? { ...set, ...patch } : set))}
           onCompleteSet={completeSet}
@@ -1115,6 +1128,20 @@ export function FitnessPlanner({
           onRemoveSet={removeSet}
           onRestReset={(seconds) => setRestRemaining(seconds)}
           onFeedbackChange={setWorkoutFeedback}
+          onFeedbackRequestChange={setFeedbackRequest}
+          onPreviewFeedback={parseFeedbackRequest}
+          onFeedbackPreviewChange={updateFeedbackPreview}
+          onApplyFeedbackPreview={applyFeedbackPreview}
+          onCancelFeedbackPreview={() => {
+            setFeedbackPreview(null);
+            setFeedbackAssistantStatus("Preview cancelled. No workout feedback was saved.");
+          }}
+          onClearFeedbackAssistant={() => {
+            setFeedbackRequest("");
+            setFeedbackPreview(null);
+            setFeedbackAssistantStatus(null);
+            setAppliedFeedbackPreviewId(null);
+          }}
           onFinish={finishWorkout}
         />
       ) : null}
@@ -1244,6 +1271,11 @@ function WorkoutExecutionModal({
   restRemaining,
   status,
   summary,
+  feedbackRequest,
+  feedbackPreview,
+  feedbackAssistantStatus,
+  feedbackSaving,
+  appliedFeedbackPreviewId,
   onClose,
   onSetChange,
   onCompleteSet,
@@ -1252,6 +1284,12 @@ function WorkoutExecutionModal({
   onRemoveSet,
   onRestReset,
   onFeedbackChange,
+  onFeedbackRequestChange,
+  onPreviewFeedback,
+  onFeedbackPreviewChange,
+  onApplyFeedbackPreview,
+  onCancelFeedbackPreview,
+  onClearFeedbackAssistant,
   onFinish
 }: {
   day: PlanDay;
@@ -1261,6 +1299,11 @@ function WorkoutExecutionModal({
   restRemaining: number;
   status: string | null;
   summary: ReturnType<typeof summarizeWorkoutSets> | null;
+  feedbackRequest: string;
+  feedbackPreview: FitnessFeedbackAssistantPreview | null;
+  feedbackAssistantStatus: string | null;
+  feedbackSaving: boolean;
+  appliedFeedbackPreviewId: string | null;
   onClose: () => void;
   onSetChange: (id: string, patch: Partial<WorkoutSetDraft>) => void;
   onCompleteSet: (id: string) => void;
@@ -1269,6 +1312,12 @@ function WorkoutExecutionModal({
   onRemoveSet: (id: string) => void;
   onRestReset: (seconds: number) => void;
   onFeedbackChange: (feedback: WorkoutFeedback) => void;
+  onFeedbackRequestChange: (value: string) => void;
+  onPreviewFeedback: () => void;
+  onFeedbackPreviewChange: (patch: Partial<FitnessFeedbackAssistantPreview>) => void;
+  onApplyFeedbackPreview: () => void;
+  onCancelFeedbackPreview: () => void;
+  onClearFeedbackAssistant: () => void;
   onFinish: () => void;
 }) {
   function previousPerformance(exerciseName: string) {
@@ -1345,6 +1394,32 @@ function WorkoutExecutionModal({
                 </div>
               );
             })}
+          </div>
+
+          <div className="mt-5">
+            <ModuleAssistant
+              moduleName="Fitness Feedback"
+              title="Fitness Feedback Assistant"
+              placeholder="Example: Felt great today, a bit sore in shoulders, pump was nice."
+              examplePrompts={fitnessFeedbackExamples}
+              request={feedbackRequest}
+              onRequestChange={onFeedbackRequestChange}
+              onSubmit={onPreviewFeedback}
+              loading={feedbackSaving}
+              preview={feedbackPreview}
+              status={feedbackAssistantStatus}
+              applyLabel={feedbackSaving ? "Applying..." : "Use In Feedback"}
+              onApply={onApplyFeedbackPreview}
+              onCancel={onCancelFeedbackPreview}
+              onClear={onClearFeedbackAssistant}
+              applyDisabled={feedbackSaving || !feedbackPreview || appliedFeedbackPreviewId === feedbackPreview.id}
+              renderPreview={(item) => (
+                <FitnessFeedbackPreview
+                  preview={item}
+                  onChange={onFeedbackPreviewChange}
+                />
+              )}
+            />
           </div>
 
           <div className="mt-5 grid gap-4 lg:grid-cols-2">

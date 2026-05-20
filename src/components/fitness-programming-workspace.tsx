@@ -1,13 +1,13 @@
 "use client";
 
-import { Dumbbell, Save, Settings2, Sparkles } from "lucide-react";
-import { FormEvent, useMemo, useState } from "react";
+import { CalendarDays, Dumbbell, LineChart, Save, Settings2, Sparkles } from "lucide-react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { CollapsibleSection } from "@/components/collapsible-section";
 import { FitnessPlanner } from "@/components/fitness-planner";
-import { Card, EmptyState, SectionTitle, StatCard } from "@/components/ui";
+import { Card, EmptyState, ProgressBar, SectionTitle, StatCard } from "@/components/ui";
 import { curatedExerciseLibrary, defaultFitnessSettings, generateWorkoutPlan } from "@/lib/fitness-programming";
 import { ensureInitialVersion } from "@/lib/fitness-plan-utils";
-import type { FitnessProgrammingSettings, FitnessProfileInput, GeneratedWorkoutPlan, WorkoutLogView } from "@/lib/types";
+import type { FitnessProgrammingSettings, FitnessProfileInput, GeneratedWorkoutPlan, PlanDay, WorkoutLogView } from "@/lib/types";
 
 const equipmentOptions = ["machines", "cables", "dumbbells", "barbell", "smith machine", "bodyweight", "ez bar"];
 const muscleOptions = ["Chest", "Back", "Shoulders", "Rear Delts", "Biceps", "Triceps", "Quads", "Hamstrings", "Glutes", "Calves", "Abs", "Forearms"];
@@ -79,6 +79,67 @@ function badgeClass(tone: "blue" | "green" | "amber" = "blue") {
   return `rounded-full border px-2.5 py-1 text-xs font-semibold ${tones[tone]}`;
 }
 
+const fitnessTabs = ["overview", "workouts", "analytics", "settings"] as const;
+type FitnessTab = (typeof fitnessTabs)[number];
+
+function isFitnessTab(value: string | null): value is FitnessTab {
+  return Boolean(value && fitnessTabs.includes(value as FitnessTab));
+}
+
+function formatTabLabel(tab: FitnessTab) {
+  return tab === "workouts" ? "Workout" : tab.charAt(0).toUpperCase() + tab.slice(1);
+}
+
+function startOfWeek(date = new Date()) {
+  const next = new Date(date);
+  next.setHours(0, 0, 0, 0);
+  next.setDate(next.getDate() - next.getDay());
+  return next;
+}
+
+function performanceLabel(value?: WorkoutLogView["performanceTrend"]) {
+  if (value === "improved") return "Improving";
+  if (value === "dropped") return "Dropping";
+  return "Stable";
+}
+
+function recoveryScore(logs: WorkoutLogView[], fallback: number) {
+  const scored = logs
+    .slice(0, 5)
+    .map((log) => log.feedback?.recovery)
+    .filter(Boolean)
+    .map((value) => {
+      if (value === "good") return 85;
+      if (value === "poor") return 45;
+      return 68;
+    });
+  if (!scored.length) return Math.round(fallback * 10);
+  return Math.round(scored.reduce((total, value) => total + value, 0) / scored.length);
+}
+
+function todayWorkout(plan: GeneratedWorkoutPlan | null): PlanDay | null {
+  if (!plan?.days.length) return null;
+  const dayCodes = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const todayCode = dayCodes[new Date().getDay()];
+  const layout = plan.weeklyLayout?.find((day) => day.day === todayCode);
+  if (layout?.training) {
+    return plan.days.find((day) => day.name === layout.name) ?? plan.days[0];
+  }
+  return plan.days[0];
+}
+
+function nextWorkoutName(plan: GeneratedWorkoutPlan | null) {
+  if (!plan?.weeklyLayout?.length) return plan?.days[0]?.name ?? "No plan";
+  const dayIndex = new Date().getDay();
+  const dayCodes = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  for (let offset = 0; offset < 7; offset += 1) {
+    const code = dayCodes[(dayIndex + offset) % 7];
+    const match = plan.weeklyLayout.find((day) => day.day === code && day.training);
+    if (match) return match.name;
+  }
+  return "Rest week";
+}
+
 export function FitnessProgrammingWorkspace({
   initialProfile,
   initialSettings,
@@ -102,9 +163,28 @@ export function FitnessProgrammingWorkspace({
   const [generated, setGenerated] = useState(() =>
     initialPlan ? ensureInitialVersion(initialPlan) : initialProfile ? ensureInitialVersion(generateWorkoutPlan(initialProfile, undefined, initialSettings ?? undefined)) : null
   );
+  const [analyticsPlan, setAnalyticsPlan] = useState<GeneratedWorkoutPlan | null>(generated);
+  const [workoutLogs, setWorkoutLogs] = useState(initialWorkoutLogs);
+  const [activeTab, setActiveTab] = useState<FitnessTab>("overview");
 
   const complete = profileComplete(profile);
   const exerciseNames = useMemo(() => curatedExerciseLibrary.map((exercise) => exercise.name).sort(), []);
+  const visiblePlan = analyticsPlan ?? generated;
+  const todaysWorkout = useMemo(() => todayWorkout(visiblePlan), [visiblePlan]);
+  const recentLogs = workoutLogs.slice(0, 5);
+  const weekStart = useMemo(() => startOfWeek(), []);
+  const workoutsThisWeek = workoutLogs.filter((log) => new Date(`${log.date}T00:00:00`) >= weekStart).length;
+  const latestPerformance = performanceLabel(workoutLogs[0]?.performanceTrend);
+  const currentRecoveryScore = recoveryScore(workoutLogs, profile.recoveryQuality);
+
+  useEffect(() => {
+    const stored = window.localStorage.getItem("selfos:fitness-tab");
+    if (isFitnessTab(stored)) window.requestAnimationFrame(() => setActiveTab(stored));
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem("selfos:fitness-tab", activeTab);
+  }, [activeTab]);
 
   function update<K extends keyof FitnessProfileInput>(key: K, value: FitnessProfileInput[K]) {
     setProfile((current) => ({ ...current, [key]: value }));
@@ -134,47 +214,173 @@ export function FitnessProgrammingWorkspace({
 
   function generateProgram() {
     const nextSettings = { ...settings, trainingDays: profile.daysAvailablePerWeek, preferredSplit: profile.preferredSplit };
+    const nextPlan = ensureInitialVersion(generateWorkoutPlan(profile, undefined, nextSettings));
     setSettings(nextSettings);
-    setGenerated(ensureInitialVersion(generateWorkoutPlan(profile, undefined, nextSettings)));
+    setGenerated(nextPlan);
+    setAnalyticsPlan(nextPlan);
+    setActiveTab("workouts");
   }
 
   return (
     <div className="space-y-5">
-      <Card>
-        <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <SectionTitle title="Fitness Profile Summary" subtitle="Your current programming inputs at a glance." />
-          <div className="flex flex-wrap gap-2">
-            <span className={badgeClass("green")}>{profile.trainingExperience}</span>
-            <span className={badgeClass("blue")}>{profile.daysAvailablePerWeek} Days</span>
-            <span className={badgeClass("blue")}>{profile.primaryGoal}</span>
-            <span className={badgeClass(profile.recoveryQuality >= 7 ? "green" : "amber")}>{recoveryLabel(profile.recoveryQuality)}</span>
-          </div>
-        </div>
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <StatCard label="Experience" value={profile.trainingExperience} detail={profile.monthsOrYearsTraining || "Training age not set"} tone="green" />
-          <StatCard label="Training Days" value={profile.daysAvailablePerWeek} detail={profile.preferredSplit} tone="blue" />
-          <StatCard label="Recovery" value={`${profile.recoveryQuality}/10`} detail={`${profile.sleepAverage}h sleep avg`} tone={profile.recoveryQuality >= 7 ? "green" : "amber"} />
-          <StatCard label="Goal" value={profile.primaryGoal} detail={`${profile.preferredWorkoutDuration} min sessions`} tone="amber" />
-        </div>
-        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-          {complete ? (
-            <button className="focus-ring inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm ring-1 ring-blue-400/40 transition-colors hover:bg-blue-500 sm:w-auto" type="button" onClick={generateProgram}>
-              <Sparkles size={17} />
-              Generate Program
+      <div className="overflow-x-auto rounded-lg border border-line bg-panel p-1">
+        <div className="flex min-w-max gap-1">
+          {fitnessTabs.map((tab) => (
+            <button
+              key={tab}
+              className={`focus-ring inline-flex h-10 items-center justify-center rounded-md px-3 text-sm font-semibold transition-colors ${
+                activeTab === tab ? "bg-blue-600 text-white shadow-sm ring-1 ring-blue-400/40" : "text-muted hover:bg-surface hover:text-ink"
+              }`}
+              type="button"
+              onClick={() => setActiveTab(tab)}
+            >
+              {formatTabLabel(tab)}
             </button>
+          ))}
+        </div>
+      </div>
+
+      {activeTab === "overview" ? (
+        <div className="space-y-5">
+          <Card>
+            <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div className="flex items-start gap-3">
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-blue-600 text-white ring-1 ring-blue-400/40">
+                  <CalendarDays size={18} />
+                </span>
+                <SectionTitle title="Today's Workout" subtitle="The next useful training action from your current weekly layout." />
+              </div>
+              <button className="focus-ring inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-line bg-surface px-3 text-sm font-semibold text-ink transition-colors hover:bg-mineral/10 sm:w-auto" type="button" onClick={() => setActiveTab("workouts")}>
+                Open Workout
+              </button>
+            </div>
+            {todaysWorkout ? (
+              <div className="grid gap-4 lg:grid-cols-[1fr_260px]">
+                <div className="rounded-lg border border-line bg-surface p-4">
+                  <p className="text-xl font-semibold text-ink">{todaysWorkout.name}</p>
+                  <p className="mt-2 text-sm leading-6 text-muted">{todaysWorkout.focusMuscles.join(", ")}</p>
+                  {todaysWorkout.recoveryRole ? <p className="mt-2 text-sm leading-6 text-muted">{todaysWorkout.recoveryRole}</p> : null}
+                </div>
+                <div className="rounded-lg border border-line bg-surface p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.11em] text-muted">Session</p>
+                  <p className="mt-2 text-2xl font-semibold text-ink">{todaysWorkout.exercises.length}</p>
+                  <p className="mt-1 text-sm text-muted">planned exercises</p>
+                </div>
+              </div>
+            ) : (
+              <p className="rounded-lg border border-line bg-surface p-4 text-sm leading-6 text-muted">
+                Generate a program to see today&apos;s workout here.
+              </p>
+            )}
+          </Card>
+
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+            <StatCard label="Workouts This Week" value={workoutsThisWeek} detail="Logged sessions" tone="blue" />
+            <StatCard label="Recovery Score" value={`${currentRecoveryScore}%`} detail="Recent feedback average" tone={currentRecoveryScore >= 70 ? "green" : "amber"} />
+            <StatCard label="Performance Trend" value={latestPerformance} detail={workoutLogs[0]?.title ?? "No recent workout"} tone={latestPerformance === "Dropping" ? "amber" : "green"} />
+            <StatCard label="Average Sleep" value={`${profile.sleepAverage}h`} detail="From fitness profile" tone="blue" />
+            <StatCard label="Next Workout" value={nextWorkoutName(visiblePlan)} detail={visiblePlan?.split ?? "Generate a plan"} tone="amber" />
+          </div>
+
+          <Card>
+            <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <SectionTitle title="Fitness Profile Summary" subtitle="Your current programming inputs at a glance." />
+              <div className="flex flex-wrap gap-2">
+                <span className={badgeClass("green")}>{profile.trainingExperience}</span>
+                <span className={badgeClass("blue")}>{profile.daysAvailablePerWeek} Days</span>
+                <span className={badgeClass("blue")}>{profile.primaryGoal}</span>
+                <span className={badgeClass(profile.recoveryQuality >= 7 ? "green" : "amber")}>{recoveryLabel(profile.recoveryQuality)}</span>
+              </div>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <StatCard label="Experience" value={profile.trainingExperience} detail={profile.monthsOrYearsTraining || "Training age not set"} tone="green" />
+              <StatCard label="Training Days" value={profile.daysAvailablePerWeek} detail={profile.preferredSplit} tone="blue" />
+              <StatCard label="Recovery" value={`${profile.recoveryQuality}/10`} detail={`${profile.sleepAverage}h sleep avg`} tone={profile.recoveryQuality >= 7 ? "green" : "amber"} />
+              <StatCard label="Goal" value={profile.primaryGoal} detail={`${profile.preferredWorkoutDuration} min sessions`} tone="amber" />
+            </div>
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+              {complete ? (
+                <button className="focus-ring inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm ring-1 ring-blue-400/40 transition-colors hover:bg-blue-500 sm:w-auto" type="button" onClick={generateProgram}>
+                  <Sparkles size={17} />
+                  Generate Program
+                </button>
+              ) : (
+                <>
+                  <p className="rounded-md border border-gold/30 bg-gold/10 px-3 py-2 text-sm leading-6 text-muted">
+                    Complete your profile in the Settings tab before generating a program.
+                  </p>
+                  <button className="focus-ring inline-flex h-11 w-full items-center justify-center gap-2 rounded-md border border-line bg-surface px-4 text-sm font-semibold text-ink transition-colors hover:bg-mineral/10 sm:w-auto" type="button" onClick={() => setActiveTab("settings")}>
+                    Open Settings
+                  </button>
+                </>
+              )}
+            </div>
+          </Card>
+
+          <Card>
+            <SectionTitle title="Recent Workout Logs" subtitle="Last few saved workouts and feedback notes." />
+            {recentLogs.length ? (
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {recentLogs.map((log) => (
+                  <div key={log.id} className="rounded-lg border border-line bg-surface p-3">
+                    <p className="font-semibold text-ink">{log.title}</p>
+                    <p className="mt-1 text-xs text-muted">{log.date}</p>
+                    <p className="mt-2 text-sm leading-6 text-muted">
+                      Difficulty {log.sessionDifficulty || "-"} | Performance {log.performanceTrend || "not set"}
+                    </p>
+                    {log.feedback?.jointPain && log.feedback.jointPain !== "none" ? (
+                      <p className="mt-2 rounded-md border border-ember/30 bg-ember/10 px-2 py-1 text-xs text-ink">
+                        Joint pain flagged: review substitutions.
+                      </p>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="rounded-lg border border-line bg-surface p-4 text-sm leading-6 text-muted">
+                No workout logs yet. Start a workout from your current program or use the manual log entry below.
+              </p>
+            )}
+          </Card>
+        </div>
+      ) : null}
+
+      {activeTab === "analytics" ? (
+        <Card>
+          <div className="mb-4 flex items-start gap-3">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-blue-600 text-white ring-1 ring-blue-400/40">
+              <LineChart size={18} />
+            </span>
+            <SectionTitle title="Weekly Set Targets by Muscle" subtitle="MEV, MAV, and MRV are estimated starting zones, not fixed rules." />
+          </div>
+          {visiblePlan ? (
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {visiblePlan.volume.map((item) => (
+                <div key={item.muscle} className="rounded-lg border border-line bg-surface p-3">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <p className="font-medium text-ink">{item.muscle}</p>
+                    <p className="text-sm text-muted">{item.plannedSets} sets</p>
+                  </div>
+                  <ProgressBar value={item.mrv ? (item.plannedSets / item.mrv) * 100 : 0} label={`MEV ${item.mev} | MAV ${item.mav} | MRV ${item.mrv}`} />
+                  <p className="mt-2 text-xs leading-5 text-muted">{item.recommendation}</p>
+                </div>
+              ))}
+            </div>
           ) : (
-            <p className="rounded-md border border-gold/30 bg-gold/10 px-3 py-2 text-sm leading-6 text-muted">
-              Complete the profile details below before generating a program.
+            <p className="rounded-lg border border-line bg-surface p-4 text-sm leading-6 text-muted">
+              Generate a program to see weekly volume targets.
             </p>
           )}
-        </div>
-      </Card>
+        </Card>
+      ) : null}
 
-      <CollapsibleSection
-        title={initialProfile ? "Edit Fitness Profile" : "Create Fitness Profile"}
-        subtitle="Detailed training inputs, equipment, exercise preferences, and limitations."
-        defaultOpen={!initialProfile}
-      >
+      {activeTab === "settings" ? (
+        <div className="space-y-5">
+          <CollapsibleSection
+            title={initialProfile ? "Edit Fitness Profile" : "Create Fitness Profile"}
+            subtitle="Detailed training inputs, equipment, exercise preferences, and limitations."
+            defaultOpen={!initialProfile}
+          >
         <form onSubmit={saveProfile} className="grid gap-4 lg:grid-cols-3">
           <label className="block">
             <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.11em] text-muted">Experience Level</span>
@@ -272,29 +478,36 @@ export function FitnessProgrammingWorkspace({
             {profileStatus ? <p className="text-sm text-muted">{profileStatus}</p> : null}
           </div>
         </form>
-      </CollapsibleSection>
+          </CollapsibleSection>
 
-      <CollapsibleSection
-        title="Fitness Programming Settings"
-        subtitle="Private defaults for splits, RIR, volume ranges, exercise preferences, and deload sensitivity."
-        defaultOpen={false}
-      >
-        <FitnessSettingsForm settings={settings} setSettings={setSettings} onSubmit={saveSettings} status={settingsStatus} embedded />
-      </CollapsibleSection>
+          <CollapsibleSection
+            title="Fitness Programming Settings"
+            subtitle="Private defaults for splits, RIR, volume ranges, exercise preferences, and deload sensitivity."
+            defaultOpen={false}
+          >
+            <FitnessSettingsForm settings={settings} setSettings={setSettings} onSubmit={saveSettings} status={settingsStatus} embedded />
+          </CollapsibleSection>
+        </div>
+      ) : null}
 
-      {generated ? (
-        <FitnessPlanner
-          key={`${generated.name}-${generated.days.length}-${generated.volume.map((item) => `${item.muscle}:${item.plannedSets}`).join("|")}`}
-          plan={generated}
-          profile={profile}
-          settings={settings}
-          onSettingsChange={setSettings}
-          onProfileChange={setProfile}
-          workoutLogs={initialWorkoutLogs}
-        />
-      ) : (
-        <EmptyState title="Create a complete fitness profile" body="The Generate Program button appears after required profile fields are complete." />
-      )}
+      {activeTab === "workouts" ? (
+        generated ? (
+          <FitnessPlanner
+            key={`${generated.name}-${generated.days.length}-${generated.volume.map((item) => `${item.muscle}:${item.plannedSets}`).join("|")}`}
+            plan={generated}
+            profile={profile}
+            settings={settings}
+            onSettingsChange={setSettings}
+            onProfileChange={setProfile}
+            onPlanChange={setAnalyticsPlan}
+            onWorkoutLogsChange={setWorkoutLogs}
+            onWorkoutStart={() => setActiveTab("workouts")}
+            workoutLogs={workoutLogs}
+          />
+        ) : (
+          <EmptyState title="Create a complete fitness profile" body="The Generate Program button appears on the Overview tab after required profile fields are complete." />
+        )
+      ) : null}
     </div>
   );
 }

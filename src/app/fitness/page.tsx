@@ -1,7 +1,7 @@
 import { FitnessProgrammingWorkspace } from "@/components/fitness-programming-workspace";
 import { CrudPanel } from "@/components/crud-panel";
 import { CollapsibleSection } from "@/components/collapsible-section";
-import { PageHeader, Card, SectionTitle } from "@/components/ui";
+import { PageHeader } from "@/components/ui";
 import { curatedExerciseLibrary } from "@/lib/fitness-programming";
 import { requireUser } from "@/lib/auth-server";
 import { getSelfOsData } from "@/lib/selfos-data";
@@ -26,33 +26,6 @@ export default async function FitnessPage() {
         description="RP-inspired evidence-based hypertrophy programming built around weekly volume, RIR, fatigue management, recovery feedback, and joint-friendly exercise selection."
       />
       <FitnessProgrammingWorkspace initialProfile={profile} initialSettings={data.fitnessSettings} initialPlan={data.activeWorkoutPlan} initialWorkoutLogs={data.workoutLogs} />
-      <div className="mt-5">
-        <Card>
-          <SectionTitle title="Recent Workout Logs" subtitle="Latest saved workouts and assistant feedback." />
-          {data.workoutLogs.length ? (
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {data.workoutLogs.slice(0, 6).map((log) => (
-                <div key={log.id} className="rounded-lg border border-line bg-surface p-3">
-                  <p className="font-semibold text-ink">{log.title}</p>
-                  <p className="mt-1 text-xs text-muted">{log.date}</p>
-                  <p className="mt-2 text-sm leading-6 text-muted">
-                    Difficulty {log.sessionDifficulty || "-"} | Performance {log.performanceTrend || "not set"}
-                  </p>
-                  {log.feedback?.jointPain && log.feedback.jointPain !== "none" ? (
-                    <p className="mt-2 rounded-md border border-ember/30 bg-ember/10 px-2 py-1 text-xs text-ink">
-                      Joint pain flagged: review substitutions.
-                    </p>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="rounded-lg border border-line bg-surface p-4 text-sm leading-6 text-muted">
-              No workout logs yet. Start a workout from your current program or add a manual entry below.
-            </p>
-          )}
-        </Card>
-      </div>
 
       <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_1fr]">
         <CollapsibleSection title="Curated Exercise Library Sample" subtitle="Scored for stimulus, stability, range of motion, fatigue cost, and joint friendliness." defaultOpen={false}>
