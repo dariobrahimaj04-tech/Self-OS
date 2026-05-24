@@ -218,6 +218,15 @@ export type JournalEntryView = {
   completed: boolean;
 };
 
+export type HabitLogView = {
+  id: string;
+  habitId: string;
+  date: string;
+  completed: boolean;
+  skipReason?: string;
+  notes?: string;
+};
+
 export type HabitView = {
   id: string;
   name: string;

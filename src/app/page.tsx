@@ -3,6 +3,7 @@ import type { ComponentType, ReactNode } from "react";
 import {
   ArrowRight,
   Brain,
+  CalendarCheck2,
   CheckCircle2,
   Dumbbell,
   Flame,
@@ -433,7 +434,7 @@ function buildRecommendedActions(data: SelfOsData, today: string): DashboardItem
     actions.push({
       title: "Complete a weekly review",
       detail: "Turn this week into one clear adjustment for next week.",
-      href: "/journal",
+      href: "/review",
       cta: "Review week",
       tone: "default"
     });
@@ -908,12 +909,13 @@ export default async function DashboardPage() {
               <ArrowRight size={15} />
             </Link>
           </div>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
             <QuickAction href="/nutrition" label="Log meal" detail="Add food, macros, and notes." icon={Utensils} />
             <QuickAction href="/fitness" label="Start workout" detail="Open the active plan or workout log." icon={Dumbbell} />
             <QuickAction href="/habits" label="Check habits" detail="Review today's completions." icon={CheckCircle2} />
             <QuickAction href="/mood" label="Add mood entry" detail="Capture mood, stress, and energy." icon={Brain} />
             <QuickAction href="/goals" label="Update goal progress" detail="Move an active priority forward." icon={Goal} />
+            <QuickAction href="/review" label="Review week" detail="Summarize wins, patterns, and next focus." icon={CalendarCheck2} />
           </div>
         </Card>
       </div>

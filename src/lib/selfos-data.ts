@@ -8,6 +8,7 @@ import type {
   FitnessProfileInput,
   GeneratedWorkoutPlan,
   GoalView,
+  HabitLogView,
   HabitView,
   InsightView,
   JournalEntryView,
@@ -25,6 +26,7 @@ export type SelfOsData = {
   moodLogs: MoodLogView[];
   journalEntries: JournalEntryView[];
   habits: HabitView[];
+  habitLogs: HabitLogView[];
   goals: GoalView[];
   learningItems: LearningItemView[];
   financeTransactions: FinanceTransactionView[];
@@ -42,6 +44,7 @@ export const emptySelfOsData: SelfOsData = {
   moodLogs: [],
   journalEntries: [],
   habits: [],
+  habitLogs: [],
   goals: [],
   learningItems: [],
   financeTransactions: [],
@@ -285,6 +288,17 @@ export async function getSelfOsData(userId: string): Promise<SelfOsData> {
   }));
 
   const todayIso = today();
+  const mappedHabitLogs: HabitLogView[] = habits.flatMap((habit) =>
+    habit.logs.map((log) => ({
+      id: log.id,
+      habitId: habit.id,
+      date: isoDate(log.date),
+      completed: log.completed,
+      skipReason: log.skipReason ?? undefined,
+      notes: log.notes ?? undefined
+    }))
+  );
+
   const mappedHabits: HabitView[] = habits.map((habit) => ({
     id: habit.id,
     name: habit.name,
@@ -458,6 +472,7 @@ export async function getSelfOsData(userId: string): Promise<SelfOsData> {
     moodLogs: mappedMoodLogs,
     journalEntries: mappedJournalEntries,
     habits: mappedHabits,
+    habitLogs: mappedHabitLogs,
     goals: mappedGoals,
     learningItems: mappedLearningItems,
     financeTransactions: mappedFinanceTransactions,
