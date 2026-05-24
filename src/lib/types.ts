@@ -253,6 +253,20 @@ export type GoalView = {
   milestones: string[];
   tasks: string[];
   weeklyReviewNotes?: string;
+  updatedAt?: string;
+};
+
+export type WeeklyReviewView = {
+  id: string;
+  weekStart: string;
+  improved?: string;
+  avoided?: string;
+  helpfulHabits?: string;
+  changesNextWeek?: string;
+  mainFocusNextWeek?: string;
+  spendingReview?: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type LearningItemView = {

@@ -2,9 +2,11 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import {
   ArrowRight,
+  Award,
   CalendarCheck2,
   CheckCircle2,
   ClipboardList,
+  Flame,
   Sparkles,
   Target,
   TrendingUp,
@@ -158,6 +160,30 @@ export default async function WeeklyReviewPage() {
         {review.overview.map((metric) => (
           <MetricCard key={metric.label} metric={metric} />
         ))}
+      </div>
+
+      <div className="mt-5 grid gap-5 xl:grid-cols-3">
+        <ReviewList
+          title="Streak Changes"
+          subtitle="Current streaks calculated from this week's private logs."
+          items={review.streakChanges}
+          empty="Streaks appear after completed module activity."
+          icon={<Flame size={18} />}
+        />
+        <ReviewList
+          title="Achievements Unlocked"
+          subtitle="Milestones that unlocked automatically from existing history."
+          items={review.achievementsUnlocked}
+          empty="No achievements unlocked in this review window."
+          icon={<Award size={18} />}
+        />
+        <ReviewList
+          title="Consistency Summary"
+          subtitle="A calm read on momentum, without noisy gamification."
+          items={review.consistencySummary}
+          empty="Consistency notes appear once several systems have data."
+          icon={<Sparkles size={18} />}
+        />
       </div>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-3">

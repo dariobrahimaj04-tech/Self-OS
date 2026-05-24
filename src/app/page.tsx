@@ -20,6 +20,8 @@ import { getSelfOsData, type SelfOsData } from "@/lib/selfos-data";
 import type { GeneratedWorkoutPlan, GoalView, HabitView } from "@/lib/types";
 import { average, currency, percent, shortDate, sum, todayIso } from "@/lib/utils";
 import { Card, EmptyState, PageHeader, ProgressBar, SectionTitle } from "@/components/ui";
+import { CurrentStreaksWidget, RecentAchievementsWidget } from "@/components/streak-achievement-widgets";
+import { buildStreakAchievementSummary } from "@/lib/streaks-achievements";
 
 type DashboardTone = "green" | "blue" | "amber" | "red" | "default";
 
@@ -347,7 +349,9 @@ function buildRecommendedActions(data: SelfOsData, today: string): DashboardItem
   const todayJournal = data.journalEntries.some((entry) => entry.date === today && entry.completed);
   const habitsDue = data.habits.filter((habit) => !habit.completedToday);
   const goals = activeGoals(data.goals);
-  const weeklyReviewDone = data.journalEntries.some((entry) => entry.mode.toLowerCase().includes("weekly") && isWithinDays(entry.date, 7));
+  const weeklyReviewDone =
+    data.weeklyReviews.some((review) => isWithinDays(review.createdAt || review.weekStart, 7)) ||
+    data.journalEntries.some((entry) => entry.mode.toLowerCase().includes("weekly") && isWithinDays(entry.date, 7));
   const plannedWorkout = plannedWorkoutForToday(data.activeWorkoutPlan);
   const recoveryLow = Boolean(todayCheckIn && (todayCheckIn.sleepHours < 6 || todayCheckIn.energyScore <= 4 || todayCheckIn.stressScore >= 8));
   const actions: DashboardItem[] = [];
@@ -704,6 +708,7 @@ export default async function DashboardPage() {
   const data = await getSelfOsData(user.id);
   const today = todayIso();
   const dailyScore = buildDailyScore(data, today);
+  const streakAchievementSummary = buildStreakAchievementSummary(data);
   const todayMeals = data.meals.filter((meal) => meal.date === today);
   const todayCheckIn = data.checkIns.find((entry) => entry.date === today);
   const todayJournal = data.journalEntries.some((entry) => entry.date === today && entry.completed);
@@ -799,6 +804,15 @@ export default async function DashboardPage() {
           <MetricLink href="/habits" label="Weekly Consistency" value={percent(weeklyConsistency)} detail="Habit average" tone="blue" status={momentum} />
           <MetricLink href="/goals" label="Goal Progress" value={goalAverage ? percent(goalAverage) : "No active goals"} detail="Active goal average" tone={goalAverage ? "blue" : "default"} />
         </div>
+      </div>
+
+      <div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
+        <CurrentStreaksWidget streaks={streakAchievementSummary.streaks} />
+        <RecentAchievementsWidget
+          achievements={streakAchievementSummary.recentAchievements}
+          nextAchievements={streakAchievementSummary.nextAchievements}
+          momentumIndicators={streakAchievementSummary.momentumIndicators}
+        />
       </div>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">

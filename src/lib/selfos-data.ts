@@ -15,6 +15,7 @@ import type {
   LearningItemView,
   MealView,
   MoodLogView,
+  WeeklyReviewView,
   WorkoutLogView,
   WorkoutPerformancePoint
 } from "@/lib/types";
@@ -28,6 +29,7 @@ export type SelfOsData = {
   habits: HabitView[];
   habitLogs: HabitLogView[];
   goals: GoalView[];
+  weeklyReviews: WeeklyReviewView[];
   learningItems: LearningItemView[];
   financeTransactions: FinanceTransactionView[];
   workoutLogs: WorkoutLogView[];
@@ -46,6 +48,7 @@ export const emptySelfOsData: SelfOsData = {
   habits: [],
   habitLogs: [],
   goals: [],
+  weeklyReviews: [],
   learningItems: [],
   financeTransactions: [],
   workoutLogs: [],
@@ -192,6 +195,7 @@ export async function getSelfOsData(userId: string): Promise<SelfOsData> {
     journalEntries,
     habits,
     goals,
+    weeklyReviews,
     learningItems,
     financeTransactions,
     workoutLogs,
@@ -214,6 +218,7 @@ export async function getSelfOsData(userId: string): Promise<SelfOsData> {
       orderBy: { createdAt: "desc" },
       include: { milestones: true, tasks: true }
     }),
+    prisma.weeklyReview.findMany({ where: { userId }, orderBy: { weekStart: "desc" }, take: 52 }),
     prisma.learningItem.findMany({ where: { userId }, orderBy: { updatedAt: "desc" }, take: 100 }),
     prisma.financeTransaction.findMany({ where: { userId }, orderBy: { date: "desc" }, take: 200 }),
     prisma.workoutLog.findMany({ where: { userId }, orderBy: { date: "desc" }, take: 120, include: { feedback: true } }),
@@ -324,7 +329,21 @@ export async function getSelfOsData(userId: string): Promise<SelfOsData> {
     progressPercentage: goal.progressPercentage,
     milestones: goal.milestones.map((milestone) => milestone.title),
     tasks: goal.tasks.map((task) => task.title),
-    weeklyReviewNotes: goal.weeklyReviewNotes ?? undefined
+    weeklyReviewNotes: goal.weeklyReviewNotes ?? undefined,
+    updatedAt: isoDate(goal.updatedAt)
+  }));
+
+  const mappedWeeklyReviews: WeeklyReviewView[] = weeklyReviews.map((review) => ({
+    id: review.id,
+    weekStart: isoDate(review.weekStart),
+    improved: review.improved ?? undefined,
+    avoided: review.avoided ?? undefined,
+    helpfulHabits: review.helpfulHabits ?? undefined,
+    changesNextWeek: review.changesNextWeek ?? undefined,
+    mainFocusNextWeek: review.mainFocusNextWeek ?? undefined,
+    spendingReview: review.spendingReview ?? undefined,
+    createdAt: isoDate(review.createdAt),
+    updatedAt: isoDate(review.updatedAt)
   }));
 
   const mappedLearningItems: LearningItemView[] = learningItems.map((item) => ({
@@ -474,6 +493,7 @@ export async function getSelfOsData(userId: string): Promise<SelfOsData> {
     habits: mappedHabits,
     habitLogs: mappedHabitLogs,
     goals: mappedGoals,
+    weeklyReviews: mappedWeeklyReviews,
     learningItems: mappedLearningItems,
     financeTransactions: mappedFinanceTransactions,
     workoutLogs: mappedWorkoutLogs,

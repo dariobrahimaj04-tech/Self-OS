@@ -4,12 +4,14 @@ import type {
   FinanceTransactionView,
   FitnessProfileInput,
   GoalView,
+  HabitLogView,
   HabitView,
   InsightView,
   JournalEntryView,
   LearningItemView,
   MealView,
   MoodLogView,
+  WeeklyReviewView,
   WorkoutLogView,
   WorkoutPerformancePoint
 } from "./types";
@@ -554,6 +556,21 @@ export const journalEntries: JournalEntryView[] = [
   { id: "journal-3", date: iso(5), mode: "Gratitude", title: "Small stabilizers", content: "Grateful for a quiet morning, a useful course lesson, and dinner already planned.", completed: true }
 ];
 
+export const weeklyReviews: WeeklyReviewView[] = [
+  {
+    id: "weekly-review-1",
+    weekStart: iso(6),
+    improved: "Training rhythm and meal prep.",
+    avoided: "Budget review until the weekend.",
+    helpfulHabits: "Morning sunlight walk and protein target.",
+    changesNextWeek: "Earlier shutdown and simpler goal list.",
+    mainFocusNextWeek: "Keep the first work block protected.",
+    spendingReview: "Software subscription is still useful for the current learning goal.",
+    createdAt: iso(3),
+    updatedAt: iso(3)
+  }
+];
+
 export const habits: HabitView[] = [
   { id: "habit-1", name: "Morning sunlight walk", category: "Health", frequency: "Daily", targetDays: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], streak: 6, weeklyCompletion: 86, monthlyCompletion: 78, completedToday: true },
   { id: "habit-2", name: "Protein target", category: "Nutrition", frequency: "Daily", targetDays: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], streak: 4, weeklyCompletion: 71, monthlyCompletion: 74, completedToday: true },
@@ -561,10 +578,17 @@ export const habits: HabitView[] = [
   { id: "habit-4", name: "Study block", category: "Learning", frequency: "Weekdays", targetDays: ["Mon", "Tue", "Wed", "Thu", "Fri"], streak: 3, weeklyCompletion: 80, monthlyCompletion: 69, completedToday: false }
 ];
 
+export const habitLogs: HabitLogView[] = [
+  ...[0, 1, 2, 3, 4, 5, 6].map((daysAgo) => ({ id: `habit-log-1-${daysAgo}`, habitId: "habit-1", date: iso(daysAgo), completed: daysAgo !== 5 })),
+  ...[0, 1, 2, 3, 4, 6].map((daysAgo) => ({ id: `habit-log-2-${daysAgo}`, habitId: "habit-2", date: iso(daysAgo), completed: true })),
+  ...[0, 1, 3, 5].map((daysAgo) => ({ id: `habit-log-3-${daysAgo}`, habitId: "habit-3", date: iso(daysAgo), completed: true })),
+  ...[1, 2, 3, 4].map((daysAgo) => ({ id: `habit-log-4-${daysAgo}`, habitId: "habit-4", date: iso(daysAgo), completed: true }))
+];
+
 export const goals: GoalView[] = [
-  { id: "goal-1", title: "Build a data portfolio", category: "Career", description: "Publish three practical analytics projects.", startDate: iso(45), targetDate: iso(-75), priority: "High", status: "Active", progressPercentage: 62, milestones: ["SQL case study", "Power BI dashboard", "ML notebook"], tasks: ["Clean bike-share dataset", "Write README", "Record walkthrough"], weeklyReviewNotes: "Strong SQL progress, needs a clearer project story." },
-  { id: "goal-2", title: "Run a consistent hypertrophy block", category: "Fitness", description: "Complete a conservative 8-week upper/lower mesocycle.", startDate: iso(14), targetDate: iso(-42), priority: "High", status: "Active", progressPercentage: 38, milestones: ["Weeks 1-3 accumulation", "Week 4 feedback", "Week 8 deload"], tasks: ["Log RIR", "Track soreness", "Update volume targets"], weeklyReviewNotes: "Keep shoulder-friendly pressing." },
-  { id: "goal-3", title: "Emergency fund", category: "Finance", description: "Increase emergency savings to three months of expenses.", startDate: iso(90), targetDate: iso(-180), priority: "Medium", status: "Active", progressPercentage: 54, milestones: ["$5k", "$7.5k", "$10k"], tasks: ["Review subscriptions", "Automate transfer"], weeklyReviewNotes: "Subscriptions review saved $34/month." }
+  { id: "goal-1", title: "Build a data portfolio", category: "Career", description: "Publish three practical analytics projects.", startDate: iso(45), targetDate: iso(-75), priority: "High", status: "Active", progressPercentage: 62, milestones: ["SQL case study", "Power BI dashboard", "ML notebook"], tasks: ["Clean bike-share dataset", "Write README", "Record walkthrough"], weeklyReviewNotes: "Strong SQL progress, needs a clearer project story.", updatedAt: iso(1) },
+  { id: "goal-2", title: "Run a consistent hypertrophy block", category: "Fitness", description: "Complete a conservative 8-week upper/lower mesocycle.", startDate: iso(14), targetDate: iso(-42), priority: "High", status: "Active", progressPercentage: 38, milestones: ["Weeks 1-3 accumulation", "Week 4 feedback", "Week 8 deload"], tasks: ["Log RIR", "Track soreness", "Update volume targets"], weeklyReviewNotes: "Keep shoulder-friendly pressing.", updatedAt: iso(3) },
+  { id: "goal-3", title: "Emergency fund", category: "Finance", description: "Increase emergency savings to three months of expenses.", startDate: iso(90), targetDate: iso(-180), priority: "Medium", status: "Active", progressPercentage: 54, milestones: ["$5k", "$7.5k", "$10k"], tasks: ["Review subscriptions", "Automate transfer"], weeklyReviewNotes: "Subscriptions review saved $34/month.", updatedAt: iso(6) }
 ];
 
 export const learningItems: LearningItemView[] = [

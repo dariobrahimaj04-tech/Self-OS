@@ -1,4 +1,5 @@
 import type { SelfOsData } from "@/lib/selfos-data";
+import { buildStreakAchievementSummary, type StreakAchievementSummary } from "@/lib/streaks-achievements";
 import type { GoalView, HabitView } from "@/lib/types";
 import { average, currency, percent, sum } from "@/lib/utils";
 
@@ -34,6 +35,10 @@ export type WeeklyReviewSummary = {
   trends: WeeklyReviewItem[];
   patterns: WeeklyReviewItem[];
   activitySummary: WeeklyReviewItem[];
+  streakChanges: WeeklyReviewItem[];
+  achievementsUnlocked: WeeklyReviewItem[];
+  consistencySummary: WeeklyReviewItem[];
+  streakAchievementSummary: StreakAchievementSummary;
   current: WeeklyPeriodSummary;
   previous: WeeklyPeriodSummary;
 };
@@ -246,6 +251,7 @@ function buildPeriodSummary(data: SelfOsData, dates: string[], today: string, fa
   const checkIns = data.checkIns.filter((entry) => dateSet.has(entry.date));
   const moodLogs = data.moodLogs.filter((entry) => dateSet.has(entry.date));
   const journalEntries = data.journalEntries.filter((entry) => dateSet.has(entry.date));
+  const weeklyReviews = data.weeklyReviews.filter((review) => dateSet.has(review.createdAt) || dateSet.has(review.weekStart));
   const financeTransactions = data.financeTransactions.filter((tx) => dateSet.has(tx.date));
   const goalSet = activeGoals(data.goals);
   const habitValues = data.habits
@@ -254,7 +260,7 @@ function buildPeriodSummary(data: SelfOsData, dates: string[], today: string, fa
   const moodValues = checkIns.length ? checkIns.map((entry) => entry.moodScore) : moodLogs.map((entry) => entry.mood);
   const stressValues = checkIns.length ? checkIns.map((entry) => entry.stressScore) : moodLogs.map((entry) => entry.stress);
   const dailyScores = dates.map((date) => calculateDailyScore(data, date, today));
-  const rawActivityCount = meals.length + workoutLogs.length + checkIns.length + moodLogs.length + journalEntries.length + financeTransactions.length;
+  const rawActivityCount = meals.length + workoutLogs.length + checkIns.length + moodLogs.length + journalEntries.length + weeklyReviews.length + financeTransactions.length;
 
   return {
     dates,
@@ -272,7 +278,7 @@ function buildPeriodSummary(data: SelfOsData, dates: string[], today: string, fa
     averageStress: average(stressValues),
     averageSleep: average(checkIns.map((entry) => entry.sleepHours)),
     journalEntries: journalEntries.length,
-    weeklyReviewCompleted: journalEntries.some((entry) => entry.mode.toLowerCase().includes("weekly") && entry.completed),
+    weeklyReviewCompleted: weeklyReviews.length > 0 || journalEntries.some((entry) => entry.mode.toLowerCase().includes("weekly") && entry.completed),
     goalProgress: average(goalSet.map((goal) => goal.progressPercentage)),
     activeGoalCount: goalSet.length,
     highPriorityGoalCount: goalSet.filter((goal) => goalPriorityScore(goal) >= 3).length,
@@ -651,6 +657,77 @@ function buildActivitySummary(current: WeeklyPeriodSummary): WeeklyReviewItem[] 
   ];
 }
 
+function buildStreakChanges(streakSummary: StreakAchievementSummary): WeeklyReviewItem[] {
+  const active = streakSummary.streaks
+    .filter((streak) => streak.current > 0)
+    .sort((a, b) => b.current - a.current || b.longest - a.longest)
+    .slice(0, 4)
+    .map((streak) => ({
+      title: `${streak.label} streak is active`,
+      detail: `${streak.current} current ${streak.unit}${streak.current === 1 ? "" : "s"}; longest run is ${streak.longest}.`,
+      href: streak.href,
+      tone: streak.tone
+    }));
+
+  if (streakSummary.coreConsistencyStreak.current > 0) {
+    active.unshift({
+      title: "Core consistency is active",
+      detail: streakSummary.consistencySummary,
+      href: "/",
+      tone: streakSummary.coreConsistencyStreak.tone
+    });
+  }
+
+  return active.length ? active.slice(0, 4) : [
+    {
+      title: "No active streak yet",
+      detail: "Start with one completed meal, check-in, workout, habit, or review to rebuild momentum.",
+      href: "/",
+      tone: "default"
+    }
+  ];
+}
+
+function buildAchievementUnlockItems(streakSummary: StreakAchievementSummary): WeeklyReviewItem[] {
+  if (!streakSummary.thisWeekAchievements.length) {
+    const next = streakSummary.nextAchievements[0];
+    return [
+      {
+        title: next ? `Next milestone: ${next.title}` : "No new achievement this week",
+        detail: next ? next.progress.label : "Current achievements are already unlocked from available history.",
+        href: next?.href ?? "/",
+        tone: next ? "blue" : "default"
+      }
+    ];
+  }
+
+  return streakSummary.thisWeekAchievements.slice(0, 4).map((achievement) => ({
+    title: achievement.title,
+    detail: `${achievement.description}${achievement.unlockedAt ? ` Unlocked ${achievement.unlockedAt}.` : ""}`,
+    href: achievement.href,
+    tone: achievement.tone
+  }));
+}
+
+function buildConsistencySummary(streakSummary: StreakAchievementSummary): WeeklyReviewItem[] {
+  const indicators = streakSummary.momentumIndicators.map((indicator) => ({
+    title: indicator.title,
+    detail: indicator.detail,
+    href: "/review",
+    tone: indicator.tone
+  }));
+
+  return [
+    {
+      title: "Consistency summary",
+      detail: streakSummary.consistencySummary,
+      href: "/",
+      tone: streakSummary.coreConsistencyStreak.tone
+    },
+    ...indicators
+  ].slice(0, 4);
+}
+
 function buildOverview(current: WeeklyPeriodSummary, previous: WeeklyPeriodSummary, hasComparison: boolean): WeeklyReviewMetric[] {
   const dailyDelta = current.averageDailyScore - previous.averageDailyScore;
   return [
@@ -764,6 +841,7 @@ export function buildWeeklyReview(data: SelfOsData, now = new Date()): WeeklyRev
   const hasComparison = previous.hasRawData;
   const challenges = buildChallenges(current);
   const momentumResult = momentum(current, previous);
+  const streakAchievementSummary = buildStreakAchievementSummary(data, now);
 
   return {
     weekRange: formatRange(currentStart, currentEnd),
@@ -780,6 +858,10 @@ export function buildWeeklyReview(data: SelfOsData, now = new Date()): WeeklyRev
     trends: buildTrends(current, previous),
     patterns: buildPatterns(data, current),
     activitySummary: buildActivitySummary(current),
+    streakChanges: buildStreakChanges(streakAchievementSummary),
+    achievementsUnlocked: buildAchievementUnlockItems(streakAchievementSummary),
+    consistencySummary: buildConsistencySummary(streakAchievementSummary),
+    streakAchievementSummary,
     current,
     previous
   };
